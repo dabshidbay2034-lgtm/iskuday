@@ -20,6 +20,8 @@ import {
   Search, UserCheck, UserX, Phone, Filter
 } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
+import { useAppAuth } from "@/hooks/use-auth";
+import type { UserRole } from "@/lib/types";
 
 type PropertyWithDetails = Tables<"properties"> & {
   profiles: Tables<"profiles"> | null;
@@ -28,17 +30,23 @@ type PropertyWithDetails = Tables<"properties"> & {
 
 type UserWithRole = {
   user_id: string;
-  role: "user" | "owner" | "hotel_manager" | "agent" | "admin";
+  // Use the shared UserRole rather than re-spelling the union here — an inline
+  // copy silently drifted out of sync with the app_role enum once already
+  // (it was missing 'semi_admin').
+  role: UserRole;
   is_verified: boolean;
   id: string;
   profile: Tables<"profiles"> | null;
+  // Phone numbers no longer live on profiles. profile_contacts is readable
+  // only by the row's owner or a platform admin — this admin panel is the one
+  // place in the app where other users' numbers may legitimately appear.
+  contact: Tables<"profile_contacts"> | null;
 };
 
 const Admin = () => {
   const [properties, setProperties] = useState<PropertyWithDetails[]>([]);
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [editingProperty, setEditingProperty] = useState<PropertyWithDetails | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [userSearchTerm, setUserSearchTerm] = useState("");
@@ -46,27 +54,11 @@ const Admin = () => {
   const [userVerifiedFilter, setUserVerifiedFilter] = useState("all");
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isLoaded, platformRole, isSignedIn } = useAppAuth();
+  const isAdmin = isLoaded && isSignedIn && platformRole === "admin";
 
-  // Check admin access
-  useEffect(() => {
-    const checkAdminAccess = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { navigate("/signin"); return; }
-
-      const { data: isAdminResult, error } = await supabase
-        .rpc("has_role", { _user_id: user.id, _role: "admin" });
-
-      if (error || !isAdminResult) {
-        toast({ title: "Access Denied", description: "You don't have admin privileges", variant: "destructive" });
-        navigate("/");
-        return;
-      }
-      setIsAdmin(true);
-    };
-    checkAdminAccess();
-  }, [navigate, toast]);
-
-  // Load properties
+  // Load properties — single query with a batch profile fetch instead of
+  // N+1 per-property profile lookups (old code fired one SELECT per property).
   useEffect(() => {
     if (!isAdmin) return;
     const loadProperties = async () => {
@@ -79,21 +71,27 @@ const Admin = () => {
       if (error) {
         toast({ title: "Error loading properties", description: error.message, variant: "destructive" });
       } else if (data) {
-        const propertiesWithOwners = await Promise.all(
-          data.map(async (property) => {
-            const { data: ownerProfile } = await supabase
-              .from("profiles").select("*").eq("user_id", property.owner_id).single();
-            return { ...property, profiles: ownerProfile };
-          })
+        // Batch: collect all distinct owner_ids, fetch their profiles in one
+        // query, then attach. Two queries total regardless of property count.
+        const ownerIds = [...new Set(data.map((p) => p.owner_id).filter(Boolean))];
+        const { data: profiles } = ownerIds.length > 0
+          ? await supabase.from("profiles").select("*").in("user_id", ownerIds)
+          : { data: [] };
+        const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
+
+        setProperties(
+          data.map((property) => ({
+            ...property,
+            profiles: profileMap.get(property.owner_id) ?? null,
+          })),
         );
-        setProperties(propertiesWithOwners);
       }
       setLoading(false);
     };
     loadProperties();
   }, [isAdmin, toast]);
 
-  // Load users with roles
+  // Load users with roles — single batch fetch for profiles instead of N+1.
   useEffect(() => {
     if (!isAdmin) return;
     const loadUsers = async () => {
@@ -108,14 +106,25 @@ const Admin = () => {
       }
 
       if (roles) {
-        const usersWithProfiles = await Promise.all(
-          roles.map(async (role) => {
-            const { data: profile } = await supabase
-              .from("profiles").select("*").eq("user_id", role.user_id).single();
-            return { ...role, profile } as UserWithRole;
-          })
+        // Batch: one query for every contact row (platform admin sees all via
+        // RLS) and one for every profile, instead of one per user.
+        const userIds = roles.map((r) => r.user_id);
+        const [contactsRes, profilesRes] = await Promise.all([
+          supabase.from("profile_contacts").select("*"),
+          userIds.length > 0
+            ? supabase.from("profiles").select("*").in("user_id", userIds)
+            : Promise.resolve({ data: [] }),
+        ]);
+        const contactsByUser = new Map((contactsRes.data ?? []).map((c) => [c.user_id, c]));
+        const profileMap = new Map((profilesRes.data ?? []).map((p) => [p.user_id, p]));
+
+        setUsers(
+          roles.map((role) => ({
+            ...role,
+            profile: profileMap.get(role.user_id) ?? null,
+            contact: contactsByUser.get(role.user_id) ?? null,
+          })),
         );
-        setUsers(usersWithProfiles);
       }
     };
     loadUsers();
@@ -141,12 +150,12 @@ const Admin = () => {
   };
 
   const deleteProperty = async (propertyId: string) => {
-    if (!window.confirm("Are you sure you want to mark this property as deleted? It will be hidden from all users.")) return;
+    if (!window.confirm("Are you sure you want to hide this property? It will be hidden from all users and marked unavailable.")) return;
     const { error } = await supabase.from("properties").update({ is_hidden: true, is_available: false }).eq("id", propertyId);
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
     else {
-      toast({ title: "Success", description: "Property marked as deleted" });
-      setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, is_hidden: true, is_available: false, _deleted: true } : p));
+      toast({ title: "Success", description: "Property hidden" });
+      setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, is_hidden: true, is_available: false } : p));
     }
   };
 
@@ -162,16 +171,16 @@ const Admin = () => {
   };
 
   // User management actions
-  const updateUserRole = async (roleId: string, userId: string, newRole: string) => {
+  const updateUserRole = async (roleId: string, userId: string, newRole: UserRole) => {
     const { error } = await supabase
       .from("user_roles")
-      .update({ role: newRole as "user" | "owner" | "hotel_manager" | "agent" | "admin" | "semi_admin" })
+      .update({ role: newRole })
       .eq("id", roleId);
 
     if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
     else {
       toast({ title: "Success", description: `Role updated to ${newRole}` });
-      setUsers(prev => prev.map(u => u.id === roleId ? { ...u, role: newRole as "user" | "owner" | "hotel_manager" | "agent" | "admin" | "semi_admin" } : u));
+      setUsers(prev => prev.map(u => u.id === roleId ? { ...u, role: newRole } : u));
     }
   };
 
@@ -198,7 +207,7 @@ const Admin = () => {
     const matchesSearch =
       user.profile?.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
       user.role.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-      user.profile?.phone?.toLowerCase().includes(userSearchTerm.toLowerCase());
+      user.contact?.phone?.toLowerCase().includes(userSearchTerm.toLowerCase());
     const matchesRole = userRoleFilter === "all" || user.role === userRoleFilter;
     const matchesVerified =
       userVerifiedFilter === "all" ||
@@ -214,15 +223,30 @@ const Admin = () => {
     owner: "Owner",
     hotel_manager: "Hotel Mgr",
     agent: "Agent",
+    semi_admin: "Semi Admin",
     admin: "Admin",
   };
 
   const roleBadgeVariant = (role: string): "default" | "secondary" | "destructive" | "outline" => {
     if (role === "admin") return "destructive";
+    if (role === "semi_admin") return "outline";
     if (role === "owner" || role === "hotel_manager") return "default";
     if (role === "agent") return "outline";
     return "secondary";
   };
+
+  // Show spinner while auth resolves. Only show "restricted" once we know
+  // the role and it doesn't match — avoids flashing the card to admins.
+  if (!isLoaded || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading admin dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
@@ -243,17 +267,6 @@ const Admin = () => {
             </Alert>
           </CardContent>
         </Card>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Loading admin dashboard...</p>
-        </div>
       </div>
     );
   }
@@ -346,14 +359,8 @@ const Admin = () => {
                           </td>
                           <td className="p-4">
                             <div className="flex flex-col gap-1">
-                              {"_deleted" in property && (property as PropertyWithDetails & { _deleted?: boolean })._deleted ? (
-                                <Badge variant="destructive">Deleted</Badge>
-                              ) : (
-                                <>
-                                  <Badge variant={property.is_available ? "default" : "secondary"}>{property.is_available ? "Available" : "Unavailable"}</Badge>
-                                  <Badge variant={property.is_hidden ? "destructive" : "default"}>{property.is_hidden ? "Hidden" : "Visible"}</Badge>
-                                </>
-                              )}
+                              <Badge variant={property.is_available ? "default" : "secondary"}>{property.is_available ? "Available" : "Unavailable"}</Badge>
+                              <Badge variant={property.is_hidden ? "destructive" : "default"}>{property.is_hidden ? "Hidden" : "Visible"}</Badge>
                             </div>
                           </td>
                           <td className="p-4">
@@ -409,7 +416,8 @@ const Admin = () => {
                   <SelectItem value="owner">Owners</SelectItem>
                   <SelectItem value="hotel_manager">Hotel Managers</SelectItem>
                   <SelectItem value="agent">Agents</SelectItem>
-                  
+                  <SelectItem value="semi_admin">Semi Admins</SelectItem>
+                  <SelectItem value="admin">Admins</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={userVerifiedFilter} onValueChange={setUserVerifiedFilter}>
@@ -507,9 +515,9 @@ const Admin = () => {
                             {user.profile?.full_name || "Unknown"}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            {user.profile?.phone ? (
+                            {user.contact?.phone ? (
                               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Phone className="w-3 h-3" /> {user.profile.phone}
+                                <Phone className="w-3 h-3" /> {user.contact.phone}
                               </span>
                             ) : (
                               <span className="text-xs text-muted-foreground">No phone</span>
@@ -553,7 +561,7 @@ const Admin = () => {
                         <Label className="text-xs text-muted-foreground shrink-0">Role:</Label>
                         <Select
                           value={user.role}
-                          onValueChange={(value) => updateUserRole(user.id, user.user_id, value)}
+                          onValueChange={(value: UserRole) => updateUserRole(user.id, user.user_id, value)}
                         >
                           <SelectTrigger className="h-8 text-xs flex-1">
                             <SelectValue />
@@ -563,6 +571,8 @@ const Admin = () => {
                             <SelectItem value="owner">Owner</SelectItem>
                             <SelectItem value="hotel_manager">Hotel Manager</SelectItem>
                             <SelectItem value="agent">Agent</SelectItem>
+                            <SelectItem value="semi_admin">Semi Admin</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

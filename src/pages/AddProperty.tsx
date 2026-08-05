@@ -16,13 +16,32 @@ import {
   ArrowLeft, ArrowRight, Home, Building2, Hotel, Briefcase,
   Bed, Sofa, CookingPot, Bath, Cctv, Car, Layers, Waves,
   MapPin, DollarSign, FileText, Image as ImageIcon, Check, AlertCircle, Armchair,
+  Lock, Globe, UserRound,
 } from "lucide-react";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAppAuth } from "@/hooks/use-auth";
+import { useSavePropertyNotes } from "@/hooks/use-property-notes";
 
 type PropertyType = "villa" | "apartment" | "hotel" | "commercial";
+type OccupancyStatus = "vacant" | "occupied";
 
 const steps = ["Type", "Details", "Amenities", "Photos", "Review"];
+
+/**
+ * Room counts are required for every unit (R2) — an owner should be able to
+ * register a unit fully in one pass, and the management side needs these to
+ * describe what's actually being let. Ranges are deliberately generous; the
+ * point is to reject nonsense, not to police unusual buildings.
+ */
+const ROOM_FIELDS = [
+  { key: "bedrooms",     label: "Bedrooms",           icon: Bed,        min: 1, max: 20, options: [1,2,3,4,5,6,7,8,9,10] },
+  { key: "toilets",      label: "Toilets/Bathrooms",  icon: Bath,       min: 1, max: 20, options: [1,2,3,4,5,6,7,8] },
+  { key: "living_rooms", label: "Living Rooms",       icon: Sofa,       min: 0, max: 10, options: [0,1,2,3,4,5] },
+  { key: "kitchens",     label: "Kitchens",           icon: CookingPot, min: 0, max: 10, options: [0,1,2,3,4] },
+] as const;
+
+type RoomKey = (typeof ROOM_FIELDS)[number]["key"];
 
 const AddProperty = () => {
   const navigate = useNavigate();
@@ -31,26 +50,21 @@ const AddProperty = () => {
   const [loading, setLoading] = useState(false);
   const [checkingAccess, setCheckingAccess] = useState(true);
 
+  const { isSignedIn, userId, user, appRole, orgId } = useAppAuth();
+  const savePropertyNotes = useSavePropertyNotes();
+
   useEffect(() => {
-    const checkAccess = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { navigate("/signin"); return; }
+    if (!isSignedIn) {
+      navigate("/signin");
+      return;
+    }
 
-      const { data: role, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      // Check if user has permission to add properties
-      if (error || !role || !["owner", "agent", "hotel_manager"].includes(role.role)) {
-        navigate("/dashboard");
-        return;
-      }
-      setCheckingAccess(false);
-    };
-    checkAccess();
-  }, [navigate]);
+    if (!["owner", "agent", "hotel_manager"].includes(appRole)) {
+      navigate("/dashboard");
+      return;
+    }
+    setCheckingAccess(false);
+  }, [isSignedIn, appRole, navigate]);
   const [photos, setPhotos] = useState<File[]>([]);
 
   // Form state
@@ -61,10 +75,17 @@ const AddProperty = () => {
     location: "",
     price: "",
     deposit: "",
-    bedrooms: "1",
-    living_rooms: "1",
-    kitchens: "1",
-    toilets: "1",
+    // Room counts start empty so the owner has to answer them — they're
+    // required now (R2) rather than silently defaulted to 1.
+    bedrooms: "",
+    living_rooms: "",
+    kitchens: "",
+    toilets: "",
+    // Occupancy and listing are two different things (plan §2 R-3): an
+    // occupied unit stays in the owner's ledger while leaving the marketplace.
+    occupancy_status: "vacant" as OccupancyStatus,
+    is_listed: true,
+    private_notes: "",
     has_cctv: false,
     has_parking: false,
     floor_number: "1",
@@ -81,10 +102,14 @@ const AddProperty = () => {
     switch (step) {
       case 0: return !!form.type;
       case 1: {
-        const price = Number(form.price);
-        return form.title.trim() && form.location.trim() && price > 0;
+        return (
+          !!form.title.trim() &&
+          !!form.location.trim() &&
+          !getPriceError() &&
+          !getDepositError()
+        );
       }
-      case 2: return true;
+      case 2: return ROOM_FIELDS.every((f) => !getRoomError(f.key));
       case 3: return true;
       default: return true;
     }
@@ -96,6 +121,26 @@ const AddProperty = () => {
     return "";
   };
 
+  // The platform collects nothing (plan §8 D1) — the deposit is simply the
+  // figure the owner records, but it has to be recorded.
+  const getDepositError = () => {
+    if (form.deposit === "") return "Deposit is required — enter 0 if you take none";
+    const value = Number(form.deposit);
+    if (Number.isNaN(value) || value < 0) return "Deposit can't be negative";
+    return "";
+  };
+
+  const getRoomError = (key: RoomKey) => {
+    const field = ROOM_FIELDS.find((f) => f.key === key)!;
+    const raw = form[key];
+    if (raw === "") return `${field.label} is required`;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < field.min || value > field.max) {
+      return `Enter a whole number between ${field.min} and ${field.max}`;
+    }
+    return "";
+  };
+
   const handleSubmit = async () => {
     if (photos.length < 2) {
       toast.error("Please upload at least 2 photos for your listing");
@@ -103,19 +148,22 @@ const AddProperty = () => {
     }
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      if (!isSignedIn || !userId) {
         toast.error("Please sign in first");
         navigate("/signin");
         return;
       }
 
       const isHotel = form.type === "hotel";
+      const isVacant = form.occupancy_status === "vacant";
 
       const { data: property, error } = await supabase
         .from("properties")
         .insert({
-          owner_id: user.id,
+          owner_id: userId,
+          // Staff acting inside an agency file the unit under that agency, so
+          // the whole team can manage it.
+          org_id: orgId ?? null,
           title: form.title.trim(),
           description: form.description.trim() || null,
           type: form.type as PropertyType,
@@ -123,26 +171,47 @@ const AddProperty = () => {
           deposit: Number(form.deposit) || 0,
           location: form.location.trim(),
           is_daily_rate: isHotel,
-          bedrooms: Number(form.bedrooms) || null,
-            living_rooms: form.type === "villa" ? Number(form.living_rooms) || null : null,
-            kitchens: (form.type === "villa" || form.type === "apartment") ? Number(form.kitchens) || null : null,
-          toilets: Number(form.toilets) || null,
+          bedrooms: Number(form.bedrooms),
+          living_rooms: Number(form.living_rooms),
+          kitchens: Number(form.kitchens),
+          toilets: Number(form.toilets),
+          occupancy_status: form.occupancy_status,
+          is_listed: form.is_listed,
+          // Kept in agreement with the split above so the existing marketplace
+          // queries stay correct: only a vacant, listed unit is available.
+          is_available: isVacant && form.is_listed,
           has_cctv: form.has_cctv,
           has_parking: form.has_parking,
           floor_number: form.type === "apartment" ? Number(form.floor_number) || null : null,
           has_balcony: form.type === "apartment" ? form.has_balcony : false,
           is_furnished: form.is_furnished,
+          has_elevator: form.has_elevator,
         })
         .select("id")
         .single();
 
       if (error) throw error;
 
+      // Private notes go to `property_private`, never onto the property row —
+      // they must not be reachable from the public feed (plan §2 R-2).
+      if (property && form.private_notes.trim()) {
+        try {
+          await savePropertyNotes.mutateAsync({
+            propertyId: property.id,
+            orgId,
+            private_notes: form.private_notes,
+          });
+        } catch {
+          // The listing itself succeeded; don't fail the whole flow over notes.
+          toast.warning("Listing created, but your private notes couldn't be saved. Add them from Manage.");
+        }
+      }
+
       // Upload photos
       if (photos.length > 0 && property) {
         const uploadPromises = photos.map(async (file, index) => {
           const ext = file.name.split(".").pop();
-          const path = `${user.id}/${property.id}/${index}.${ext}`;
+          const path = `${userId}/${property.id}/${index}.${ext}`;
           const { error: uploadError } = await supabase.storage
             .from("property-images")
             .upload(path, file, { upsert: true });
@@ -307,12 +376,89 @@ const AddProperty = () => {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium text-muted-foreground">Deposit</Label>
+                    <Label className="text-xs font-medium text-muted-foreground">Deposit *</Label>
                     <div className="relative">
                       <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input type="number" min="0" placeholder="0" value={form.deposit} onChange={(e) => updateForm("deposit", e.target.value)} className="pl-10 h-12 rounded-xl" />
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={form.deposit}
+                        onChange={(e) => updateForm("deposit", e.target.value)}
+                        className={`pl-10 h-12 rounded-xl ${getDepositError() ? "border-destructive" : ""}`}
+                      />
                     </div>
+                    {getDepositError() && (
+                      <div className="flex items-center gap-1.5 text-destructive text-xs">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>{getDepositError()}</span>
+                      </div>
+                    )}
                   </div>
+                </div>
+
+                {/* Occupancy & listing — two separate decisions (plan §2 R-3) */}
+                <div className="space-y-3 pt-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Availability</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { value: "vacant", label: "Free to rent", icon: Home, desc: "Empty and ready" },
+                      { value: "occupied", label: "Occupied", icon: UserRound, desc: "Someone lives here" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          updateForm("occupancy_status", opt.value);
+                          // An occupied unit can never be advertised; going
+                          // back to vacant restores the advertised default.
+                          updateForm("is_listed", opt.value === "vacant");
+                        }}
+                        className={`flex flex-col items-start gap-1 p-3 rounded-xl border-2 transition-all text-left ${
+                          form.occupancy_status === opt.value ? "border-primary bg-primary/10" : "border-border hover:border-primary/30"
+                        }`}
+                      >
+                        <opt.icon className="w-4 h-4 text-foreground" />
+                        <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                        <span className="text-[11px] text-muted-foreground">{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 py-3 border-b border-border">
+                    <div className="min-w-0">
+                      <Label className="flex items-center gap-2 text-sm text-foreground">
+                        <Globe className="w-4 h-4 text-muted-foreground" /> Show in the marketplace
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        {form.occupancy_status === "occupied"
+                          ? "Occupied units are still tracked in your dashboard — rent, bills and tenant — but they don't appear in the marketplace."
+                          : "Turn this off to keep the unit in your dashboard without advertising it (renovation, held for someone)."}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.is_listed && form.occupancy_status === "vacant"}
+                      disabled={form.occupancy_status === "occupied"}
+                      onCheckedChange={(v) => updateForm("is_listed", v)}
+                    />
+                  </div>
+                </div>
+
+                {/* Private notes — stored in property_private, never public */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5" /> Private notes (optional)
+                  </Label>
+                  <Textarea
+                    placeholder="Landlord prefers cash on the 1st. Spare keys with the caretaker…"
+                    value={form.private_notes}
+                    onChange={(e) => updateForm("private_notes", e.target.value)}
+                    className="rounded-xl min-h-[80px]"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Only you and your agency staff can see this. It never appears on the public listing.
+                  </p>
                 </div>
               </div>
             )}
@@ -320,53 +466,46 @@ const AddProperty = () => {
             {/* Step 2: Amenities */}
             {step === 2 && (
               <div className="space-y-5">
-                <p className="text-sm font-medium text-foreground">Room details & amenities</p>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground flex items-center gap-1"><Bed className="w-3.5 h-3.5" /> Bedrooms</Label>
-                    <Select value={form.bedrooms} onValueChange={(v) => updateForm("bedrooms", v)}>
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>{[1,2,3,4,5,6,7,8].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground flex items-center gap-1"><Bath className="w-3.5 h-3.5" /> Toilets/Bathrooms</Label>
-                    <Select value={form.toilets} onValueChange={(v) => updateForm("toilets", v)}>
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                      <SelectContent>{[1,2,3,4,5].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">Room details & amenities</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    All four counts are required — renters filter on them, and your
+                    management dashboard uses them to describe the unit.
+                  </p>
                 </div>
 
-                {form.type === "villa" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground flex items-center gap-1"><Sofa className="w-3.5 h-3.5" /> Living Rooms</Label>
-                      <Select value={form.living_rooms} onValueChange={(v) => updateForm("living_rooms", v)}>
-                        <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                        <SelectContent>{[1,2,3].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground flex items-center gap-1"><CookingPot className="w-3.5 h-3.5" /> Kitchens</Label>
-                      <Select value={form.kitchens} onValueChange={(v) => updateForm("kitchens", v)}>
-                        <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                        <SelectContent>{[0,1,2,3].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {ROOM_FIELDS.map((field) => {
+                    const error = getRoomError(field.key);
+                    return (
+                      <div key={field.key} className="space-y-2">
+                        <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                          <field.icon className="w-3.5 h-3.5" /> {field.label} *
+                        </Label>
+                        <Select value={form[field.key]} onValueChange={(v) => updateForm(field.key, v)}>
+                          <SelectTrigger className={`h-11 rounded-xl ${error ? "border-destructive" : ""}`}>
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {field.options.map((n) => (
+                              <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {ROOM_FIELDS.some((f) => !!getRoomError(f.key)) && (
+                  <div className="flex items-center gap-1.5 text-destructive text-xs">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>{ROOM_FIELDS.map((f) => getRoomError(f.key)).find(Boolean)}</span>
                   </div>
                 )}
 
                 {form.type === "apartment" && (
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground flex items-center gap-1"><CookingPot className="w-3.5 h-3.5" /> Kitchens</Label>
-                      <Select value={form.kitchens} onValueChange={(v) => updateForm("kitchens", v)}>
-                        <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
-                        <SelectContent>{[0,1,2,3].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground flex items-center gap-1"><Layers className="w-3.5 h-3.5" /> Floor Number</Label>
                       <Input type="number" min="0" max="100" value={form.floor_number} onChange={(e) => updateForm("floor_number", e.target.value)} className="h-11 rounded-xl" />
@@ -387,6 +526,10 @@ const AddProperty = () => {
                   <div className="flex items-center justify-between py-3 border-b border-border">
                     <Label className="flex items-center gap-2 text-sm text-foreground"><Armchair className="w-4 h-4 text-muted-foreground" /> Furnished</Label>
                     <Switch checked={form.is_furnished} onCheckedChange={(v) => updateForm("is_furnished", v)} />
+                  </div>
+                  <div className="flex items-center justify-between py-3 border-b border-border">
+                    <Label className="flex items-center gap-2 text-sm text-foreground"><span role="img" aria-label="Elevator" className="text-base leading-none">🛗</span> Elevator</Label>
+                    <Switch checked={form.has_elevator} onCheckedChange={(v) => updateForm("has_elevator", v)} />
                   </div>
                 </div>
               </div>
@@ -420,12 +563,31 @@ const AddProperty = () => {
                   <div className="flex flex-wrap gap-2 pt-2 border-t border-border text-xs text-muted-foreground">
                     <span className="flex items-center gap-1"><Bed className="w-3.5 h-3.5" />{form.bedrooms} bed</span>
                     <span className="flex items-center gap-1"><Bath className="w-3.5 h-3.5" />{form.toilets} bath</span>
+                    <span className="flex items-center gap-1"><Sofa className="w-3.5 h-3.5" />{form.living_rooms} living</span>
+                    <span className="flex items-center gap-1"><CookingPot className="w-3.5 h-3.5" />{form.kitchens} kitchen</span>
                     {form.has_cctv && <span className="flex items-center gap-1"><Cctv className="w-3.5 h-3.5" />CCTV</span>}
                     {form.has_parking && <span className="flex items-center gap-1"><Car className="w-3.5 h-3.5" />Parking</span>}
                     {form.has_balcony && <span className="flex items-center gap-1"><Waves className="w-3.5 h-3.5" />Balcony</span>}
                     {form.has_elevator && <span className="flex items-center gap-1"><span role="img" aria-label="Elevator">🛗</span>Elevator</span>}
                   </div>
                   <p className="text-xs text-muted-foreground flex items-center gap-1"><ImageIcon className="w-3.5 h-3.5" /> {photos.length} photo{photos.length !== 1 ? "s" : ""}</p>
+
+                  <div className="pt-2 border-t border-border space-y-1.5">
+                    <p className="text-xs text-foreground flex items-center gap-1.5">
+                      {form.occupancy_status === "occupied" ? (
+                        <><UserRound className="w-3.5 h-3.5 text-muted-foreground" /> Occupied — tracked in your dashboard, hidden from the marketplace</>
+                      ) : form.is_listed ? (
+                        <><Globe className="w-3.5 h-3.5 text-muted-foreground" /> Free to rent — will appear in the marketplace</>
+                      ) : (
+                        <><Globe className="w-3.5 h-3.5 text-muted-foreground" /> Free to rent — kept private, not advertised</>
+                      )}
+                    </p>
+                    {form.private_notes.trim() && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5" /> Private notes saved for your agency only
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

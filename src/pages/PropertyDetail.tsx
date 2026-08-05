@@ -12,39 +12,16 @@ import {
   ArrowLeft, MapPin, Bed, Bath, Car, Cctv, Building2, Waves,
   Sofa, CookingPot, DollarSign, Shield, User, Phone, Mail, Calendar, Home, Hotel, Eye, MessageCircle, Armchair
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
+import { useAppAuth } from "@/hooks/use-auth";
 
 const PropertyDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isSemiAdmin, setIsSemiAdmin] = useState(false);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUserId(user?.id ?? null);
-      
-      if (user) {
-        // Check for admin role
-        const { data: adminData } = await supabase.rpc('has_role', { 
-          _user_id: user.id, 
-          _role: 'admin' 
-        });
-        setIsAdmin(adminData || false);
-        
-        // Check for semi_admin role
-        const { data: semiAdminData } = await supabase.rpc('has_role', { 
-          _user_id: user.id, 
-          _role: 'semi_admin' 
-        });
-        setIsSemiAdmin(semiAdminData || false);
-      }
-    };
-    checkAuth();
-  }, []);
+  const { userId: currentUserId, appRole } = useAppAuth();
+  const isAdmin = appRole === "admin";
+  const isSemiAdmin = appRole === "semi_admin";
 
 const typeColors: Record<string, string> = {
   villa: "bg-success text-success-foreground",
@@ -104,7 +81,11 @@ const typeLabels: Record<string, string> = {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("*")
+        // Explicit columns, not "*". This is a PUBLIC page fetching another
+        // user's profile row, so it must ask for the minimum it renders — if a
+        // private column is ever added to profiles, "*" would start shipping it
+        // to every anonymous visitor. See src/test/privacy-guards.test.ts.
+        .select("full_name, avatar_url")
         .eq("user_id", property!.owner_id)
         .single();
       if (error) throw error;
@@ -280,11 +261,11 @@ const typeLabels: Record<string, string> = {
                   <p className="font-heading font-semibold text-foreground text-sm">
                     {owner?.full_name || "Property Owner"}
                   </p>
-                  {owner?.phone && currentUserId === property.owner_id && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Phone className="w-3 h-3" /> {owner.phone}
-                    </p>
-                  )}
+                  NOTE: never render an owner's phone number here. Requirement R4
+                  and decision D2 say renters reach an owner through the inquiry
+                  / "Contact Us on WhatsApp" flow below and never see a number;
+                  numbers live in profile_contacts, which is readable only by
+                  their owner or a platform admin.
                 </div>
               </div>
             </div> */}

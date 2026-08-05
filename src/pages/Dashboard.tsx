@@ -24,8 +24,12 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { motion } from "framer-motion";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
-import type { Session } from "@supabase/supabase-js";
-import type { Property } from "@/lib/types";
+import { useAppAuth } from "@/hooks/use-auth";
+import { useClerk } from "@clerk/clerk-react";
+import type { Database } from "@/integrations/supabase/types";
+
+/** A properties row exactly as the database returns it. */
+type EditableProperty = Database["public"]["Tables"]["properties"]["Row"];
 
 const typeColors: Record<string, string> = {
   villa: "bg-success text-success-foreground",
@@ -41,10 +45,11 @@ type TabType = "listings";
 const Dashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<Session | null>(null);
+  const { userId, isSignedIn, user } = useAppAuth();
+  const { signOut } = useClerk();
   const [tab, setTab] = useState<TabType>("listings");
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [editProperty, setEditProperty] = useState<Property | null>(null);
+  const [editProperty, setEditProperty] = useState<EditableProperty | null>(null);
   const [editForm, setEditForm] = useState({ title: "", description: "", price: "", deposit: "", location: "", has_cctv: false, has_parking: false, is_available: true });
   const [saving, setSaving] = useState(false);
   const [editImages, setEditImages] = useState<{ id: string; image_url: string; sort_order: number }[]>([]);
@@ -52,49 +57,43 @@ const Dashboard = () => {
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (!session) navigate("/signin");
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (!session) navigate("/signin");
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    if (!isSignedIn) {
+      navigate("/signin");
+    }
+  }, [isSignedIn, navigate]);
 
   const { data: profile } = useQuery({
-    queryKey: ["my-profile", session?.user?.id],
+    queryKey: ["my-profile", userId],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("*").eq("user_id", session!.user.id).single();
+      const { data } = await supabase.from("profiles").select("*").eq("user_id", userId!).single();
       return data;
     },
-    enabled: !!session?.user?.id,
+    enabled: !!userId,
   });
 
   const { data: userRole } = useQuery({
-    queryKey: ["my-role", session?.user?.id],
+    queryKey: ["my-role", userId],
     queryFn: async () => {
-      const { data } = await supabase.from("user_roles").select("role, is_verified").eq("user_id", session!.user.id).single();
+      const { data } = await supabase.from("user_roles").select("role, is_verified").eq("user_id", userId!).single();
       return data;
     },
-    enabled: !!session?.user?.id,
+    enabled: !!userId,
   });
 
   const isPendingVerification = !userRole?.is_verified;
 
   const { data: properties, isLoading: propsLoading } = useQuery({
-    queryKey: ["my-properties", session?.user?.id],
+    queryKey: ["my-properties", userId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("properties")
         .select("*, property_images(image_url, sort_order)")
-        .eq("owner_id", session!.user.id)
+        .eq("owner_id", userId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
     },
-    enabled: !!session?.user?.id,
+    enabled: !!userId,
   });
 
 
@@ -108,7 +107,10 @@ const Dashboard = () => {
     setDeleteId(null);
   };
 
-  const openEdit = async (p: Property) => {
+  // Takes the database row straight from the properties query, not the richer
+  // `Property` view-model — the two have drifted (Property has `images`, the row
+  // has `property_images`), and forcing a cast here is what hid that.
+  const openEdit = async (p: EditableProperty) => {
     setEditProperty(p);
     setEditForm({
       title: p.title, description: p.description || "", price: String(p.price),
@@ -198,11 +200,11 @@ const Dashboard = () => {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/");
   };
 
-  if (!session) return null;
+  if (!isSignedIn) return null;
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
@@ -223,7 +225,7 @@ const Dashboard = () => {
               <h1 className="text-xl font-heading font-bold text-foreground">
                 {profile?.full_name || "My Dashboard"}
               </h1>
-              <p className="text-muted-foreground text-sm">{session.user.email}</p>
+              <p className="text-muted-foreground text-sm">{user?.primaryEmailAddress?.emailAddress}</p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -275,15 +277,10 @@ const Dashboard = () => {
               </div>
             )}
 
-            {properties?.map((p: {
-              id: string;
-              title: string;
-              type: string;
-              price: number;
-              location: string;
-              is_available: boolean;
-              property_images?: { sort_order: number; image_url: string }[];
-            }, i: number) => {
+            {/* No hand-written annotation here: the row shape comes from the
+                select("*") above. Re-declaring it by hand is what silently
+                dropped is_daily_rate and views from the type. */}
+            {properties?.map((p, i: number) => {
               const TypeIcon = typeIcons[p.type] || Home;
               const coverImage = p.property_images
                 ?.sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)?.[0]?.image_url;

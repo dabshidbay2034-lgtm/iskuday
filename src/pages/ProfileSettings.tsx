@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { setPlatformRole } from "@/lib/user-role";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import Header from "@/components/Header";
@@ -13,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Camera, Save, User, Home, Hotel, ShieldCheck, ArrowUpCircle } from "lucide-react";
 import { motion } from "framer-motion";
-import type { Session } from "@supabase/supabase-js";
+import { useAppAuth } from "@/hooks/use-auth";
 import type { UserRole } from "@/lib/types";
 
 const roleInfo: Record<string, { label: string; icon: React.ElementType; color: string }> = {
@@ -31,7 +33,8 @@ const upgradeOptions: { value: UserRole; label: string; desc: string }[] = [
 const ProfileSettings = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const { isSignedIn, userId, user } = useAppAuth();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -42,80 +45,102 @@ const ProfileSettings = () => {
   const [upgradingRole, setUpgradingRole] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { navigate("/signin"); return; }
-      setSession(session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (!session) navigate("/signin");
-      setSession(session);
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    if (!isSignedIn) {
+      navigate("/signin");
+    }
+  }, [isSignedIn, navigate]);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
+    if (!userId) return;
     const fetchData = async () => {
       setLoading(true);
-      const [profileRes, roleRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("user_id", session.user.id).maybeSingle(),
-        supabase.from("user_roles").select("role").eq("user_id", session.user.id).maybeSingle(),
+      // Phone lives in profile_contacts, not profiles — profiles is
+      // world-readable, profile_contacts is owner-or-platform-admin only.
+      const [profileRes, roleRes, contactRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle(),
+        // Read all role rows, not .maybeSingle(): user_id is UNIQUE now, but a
+        // leftover pre-migration duplicate makes maybeSingle() throw (PostgREST
+        // 406) and silently leave the role at "user". Same defensive read as
+        // useAppAuth. Pick the most privileged to match the hook's precedence.
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+        supabase.from("profile_contacts").select("phone").eq("user_id", userId).maybeSingle(),
       ]);
       if (profileRes.data) {
         setFullName(profileRes.data.full_name || "");
-        setPhone(profileRes.data.phone || "");
         setAvatarUrl(profileRes.data.avatar_url);
       }
-      if (roleRes.data) {
-        setCurrentRole(roleRes.data.role as UserRole);
+      setPhone(contactRes.data?.phone || "");
+      if (roleRes.data && roleRes.data.length > 0) {
+        const precedence: UserRole[] = ['admin', 'semi_admin', 'owner', 'hotel_manager', 'agent', 'user'];
+        const resolved = precedence.find((r) =>
+          roleRes.data!.some((row) => (row.role as UserRole) === r),
+        ) ?? (roleRes.data[0].role as UserRole);
+        setCurrentRole(resolved);
       }
       setLoading(false);
     };
     fetchData();
-  }, [session?.user?.id]);
+  }, [userId]);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !session?.user?.id) return;
+    if (!file || !userId) return;
     if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
     if (file.size > 2 * 1024 * 1024) { toast.error("Image must be under 2MB"); return; }
 
     setUploading(true);
     const ext = file.name.split(".").pop();
-    const filePath = `${session.user.id}/avatar.${ext}`;
+    const filePath = `${userId}/avatar.${ext}`;
     const { error: uploadError } = await supabase.storage.from("property-images").upload(filePath, file, { upsert: true });
     if (uploadError) { toast.error("Failed to upload avatar"); setUploading(false); return; }
 
     const { data: { publicUrl } } = supabase.storage.from("property-images").getPublicUrl(filePath);
     const url = `${publicUrl}?t=${Date.now()}`;
-    const { error: updateError } = await supabase.from("profiles").update({ avatar_url: url }).eq("user_id", session.user.id);
+    const { error: updateError } = await supabase.from("profiles").update({ avatar_url: url }).eq("user_id", userId);
     if (updateError) { toast.error("Failed to update avatar"); } else { setAvatarUrl(url); toast.success("Avatar updated!"); }
     setUploading(false);
   };
 
   const handleSave = async () => {
-    if (!session?.user?.id) return;
+    if (!userId) return;
     if (!fullName.trim()) { toast.error("Name is required"); return; }
     setSaving(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ full_name: fullName.trim(), phone: phone.trim() || null })
-      .eq("user_id", session.user.id);
+    // Two writes: the public-safe name on profiles, the phone on the private
+    // profile_contacts row. Writing phone to profiles would silently do nothing
+    // now that the column is gone — and would have leaked it if it still were.
+    const [{ error: profileError }, { error: contactError }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .update({ full_name: fullName.trim() })
+        .eq("user_id", userId),
+      supabase
+        .from("profile_contacts")
+        .upsert({ user_id: userId, phone: phone.trim() || null }, { onConflict: "user_id" }),
+    ]);
+    const error = profileError || contactError;
     if (error) { toast.error("Failed to save profile: " + error.message); } else { toast.success("Profile updated!"); }
     setSaving(false);
   };
 
   const handleUpgradeRole = async (newRole: UserRole) => {
-    if (!session?.user?.id) return;
+    if (!userId) return;
     setUpgradingRole(true);
-    const { error } = await supabase
-      .from("user_roles")
-      .update({ role: newRole })
-      .eq("user_id", session.user.id);
+
+    // Same helper CompleteProfile uses. It addresses the row by primary key,
+    // so it never rewrites every row for a user (which collapsed two rows onto
+    // one value and failed with 23505), and it names no unique constraint, so
+    // it survives 20260805000003 flipping user_roles from UNIQUE(user_id, role)
+    // to UNIQUE(user_id).
+    const { error } = await setPlatformRole(userId, newRole, true);
+
     if (error) {
-      toast.error("Failed to upgrade role");
+      console.error("Failed to upgrade role", error);
+      toast.error(`Failed to upgrade role: ${error.message}`);
     } else {
       setCurrentRole(newRole);
+      // useAppAuth caches the role lookup for 5 minutes; without this the rest
+      // of the app keeps gating on the old role until a reload.
+      queryClient.invalidateQueries({ queryKey: ["user-role", userId] });
       toast.success(`You're now a ${roleInfo[newRole].label}! You can list properties.`);
     }
     setUpgradingRole(false);
@@ -189,7 +214,7 @@ const ProfileSettings = () => {
                   </div>
                   <div>
                     <Label>Email</Label>
-                    <Input value={session?.user?.email || ""} disabled className="opacity-60" />
+                    <Input value={user?.primaryEmailAddress?.emailAddress || ""} disabled className="opacity-60" />
                     <p className="text-xs text-muted-foreground mt-1">Email cannot be changed</p>
                   </div>
                 </CardContent>

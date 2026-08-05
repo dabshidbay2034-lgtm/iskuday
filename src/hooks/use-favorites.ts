@@ -1,19 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
+import { useAppAuth } from "@/hooks/use-auth";
 
 export const useFavorites = () => {
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<Session | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const userId = session?.user?.id;
+  const { userId, isSignedIn } = useAppAuth();
 
   const { data: favoriteIds = [] } = useQuery({
     queryKey: ["favorites", userId],
@@ -55,6 +46,6 @@ export const useFavorites = () => {
     favoriteIds,
     isFavorite: (id: string) => favoriteIds.includes(id),
     toggleFavorite: toggleFavorite.mutate,
-    isAuthenticated: !!userId,
+    isAuthenticated: isSignedIn,
   };
 };

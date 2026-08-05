@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,10 +12,37 @@ import { useFavorites } from "@/hooks/use-favorites";
 import {
   ChevronLeft, ChevronRight, Search, SlidersHorizontal, MapPin, X,
   DollarSign, Bed, Car, Cctv, Waves, ArrowUpDown, Home, Building2, Hotel, Briefcase,
-  Armchair, CalendarDays,
+  Armchair, CalendarDays, Shuffle,
 } from "lucide-react";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
-import type { Property } from "@/lib/types";
+import type { Property, PropertyType } from "@/lib/types";
+
+interface RawPropertyRecord {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  price: number;
+  deposit: number;
+  location: string;
+  owner_id?: string;
+  org_id?: string;
+  created_at: string;
+  is_available?: boolean;
+  is_listed?: boolean;
+  occupancy_status?: string;
+  is_daily_rate?: boolean;
+  bedrooms?: number;
+  living_rooms?: number;
+  kitchens?: number;
+  toilets?: number;
+  has_cctv?: boolean;
+  has_parking?: boolean;
+  floor_number?: number;
+  has_balcony?: boolean;
+  is_furnished?: boolean;
+  property_images?: Array<{ image_url: string; sort_order?: number }>;
+}
 
 const ITEMS_PER_PAGE = 20;
 
@@ -26,6 +53,15 @@ const typeFilters = [
   { value: "hotel", label: "Hotels", icon: Hotel },
   { value: "commercial", label: "Commercial", icon: Briefcase },
 ];
+
+export function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
 
 const FeaturedProperties = () => {
   const [page, setPage] = useState(0);
@@ -39,7 +75,7 @@ const FeaturedProperties = () => {
   const [maxPrice, setMaxPrice] = useState("");
   const [bedrooms, setBedrooms] = useState("");
   const [amenities, setAmenities] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState("newest");
+  const [sortBy, setSortBy] = useState("randomized");
   const [showFilters, setShowFilters] = useState(false);
 
   const toggleAmenity = (a: string) => {
@@ -56,7 +92,7 @@ const FeaturedProperties = () => {
     setAmenities([]);
     setSearchQuery("");
     setActiveType("");
-    setSortBy("newest");
+    setSortBy("randomized");
     setPage(0);
   };
 
@@ -66,74 +102,37 @@ const FeaturedProperties = () => {
       const from = page * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
+      // Query properties where is_listed = true AND occupancy_status = 'vacant'
       const { count } = await supabase
         .from("properties")
         .select("id", { count: "exact", head: true })
+        .or("is_listed.eq.true,is_listed.is.null")
+        .or("occupancy_status.eq.vacant,occupancy_status.is.null")
         .eq("is_available", true);
 
       const { data, error } = await supabase
         .from("properties")
         .select("*, property_images(image_url, sort_order)")
+        .or("is_listed.eq.true,is_listed.is.null")
+        .or("occupancy_status.eq.vacant,occupancy_status.is.null")
         .eq("is_available", true)
         .order("created_at", { ascending: false })
         .range(from, to);
 
       if (error) throw error;
-      return { items: data, total: count || 0 };
+      return { items: (data as unknown as RawPropertyRecord[]) || [], total: count || 0 };
     },
   });
 
   const totalPages = Math.ceil((data?.total || 0) / ITEMS_PER_PAGE);
 
-  const properties: Property[] = (data?.items || [])
-    .map((p: {
-      id: string;
-      title: string;
-      description: string | null;
-      type: string;
-      price: number;
-      deposit: number;
-      location: string;
-      property_images: { sort_order: number; image_url: string }[] | null;
-      owner_id: string;
-      created_at: string;
-      is_available: boolean;
-      is_daily_rate: boolean;
-      bedrooms: number | null;
-      living_rooms: number | null;
-      kitchens: number | null;
-      toilets: number | null;
-      has_cctv: boolean | null;
-      has_parking: boolean | null;
-      floor_number: number | null;
-      has_balcony: boolean | null;
-      is_furnished: boolean | null;
-    }) => ({
-      id: p.id,
-      title: p.title,
-      description: p.description,
-      type: p.type,
-      price: p.price,
-      deposit: p.deposit,
-      location: p.location,
-      images: (p.property_images || [])
-        .sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)
-        .map((img: { image_url: string }) => img.image_url),
-      owner_id: p.owner_id,
-      created_at: p.created_at,
-      is_available: p.is_available,
-      is_daily_rate: p.is_daily_rate,
-      bedrooms: p.bedrooms,
-      living_rooms: p.living_rooms,
-      kitchens: p.kitchens,
-      toilets: p.toilets,
-      has_cctv: p.has_cctv,
-      has_parking: p.has_parking,
-      floor_number: p.floor_number,
-      has_balcony: p.has_balcony,
-      is_furnished: p.is_furnished,
-    }))
-    .filter((p: Property) => {
+  const rawProperties: Property[] = (data?.items || [])
+    .filter((p) => {
+      // Hard requirement: only show properties where is_listed = true AND occupancy_status = 'vacant'
+      const isListed = p.is_listed !== false;
+      const isVacant = p.occupancy_status ? p.occupancy_status === "vacant" : p.is_available !== false;
+      if (!isListed || !isVacant) return false;
+
       if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase()) && !p.location.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (activeType && p.type !== activeType) return false;
       if (district && district !== "all" && p.location !== district) return false;
@@ -147,11 +146,49 @@ const FeaturedProperties = () => {
       if (amenities.includes("daily_rate") && !p.is_daily_rate) return false;
       return true;
     })
-    .sort((a: Property, b: Property) => {
-      if (sortBy === "price_asc") return a.price - b.price;
-      if (sortBy === "price_desc") return b.price - a.price;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      description: p.description,
+      type: (p.type === "villa" ? "house" : p.type) as PropertyType,
+      price: p.price,
+      deposit: p.deposit,
+      location: p.location,
+      images: (p.property_images || [])
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((img) => img.image_url),
+      owner_id: p.owner_id || "",
+      org_id: p.org_id,
+      created_at: p.created_at,
+      is_available: p.is_available ?? true,
+      is_daily_rate: p.is_daily_rate,
+      bedrooms: p.bedrooms,
+      living_rooms: p.living_rooms,
+      kitchens: p.kitchens,
+      toilets: p.toilets,
+      has_cctv: p.has_cctv,
+      has_parking: p.has_parking,
+      floor_number: p.floor_number,
+      has_balcony: p.has_balcony,
+      is_furnished: p.is_furnished,
+    }));;
+
+  // Per plan §8 D3: Randomised ordering for the explore section
+  const properties = useMemo(() => {
+    if (sortBy === "price_asc") {
+      return [...rawProperties].sort((a, b) => a.price - b.price);
+    }
+    if (sortBy === "price_desc") {
+      return [...rawProperties].sort((a, b) => b.price - a.price);
+    }
+    if (sortBy === "newest") {
+      return [...rawProperties].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+    // Default "randomized": randomize explore ordering
+    return shuffleArray(rawProperties);
+  }, [rawProperties, sortBy]);
 
   if (!isLoading && (data?.items || []).length === 0 && page === 0) return null;
 
@@ -160,11 +197,11 @@ const FeaturedProperties = () => {
       <div className="container">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <span className="text-xs font-bold uppercase tracking-widest text-primary mb-2 block">Just listed</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-primary mb-2 block">Explore Marketplace</span>
             <h2 className="text-2xl md:text-3xl font-heading font-extrabold text-foreground tracking-tight">
-              Latest rentals
+              Featured rentals
             </h2>
-            <p className="text-muted-foreground text-sm mt-1">Newest properties available right now</p>
+            <p className="text-muted-foreground text-sm mt-1">Discover vacant homes, apartments & hotel rooms in Mogadishu</p>
           </div>
         </div>
 
@@ -288,6 +325,7 @@ const FeaturedProperties = () => {
                       <SelectValue placeholder="Sort by..." />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="randomized">Randomized Explore</SelectItem>
                       <SelectItem value="newest">Newest first</SelectItem>
                       <SelectItem value="price_asc">Price: Low to High</SelectItem>
                       <SelectItem value="price_desc">Price: High to Low</SelectItem>
@@ -357,7 +395,9 @@ const FeaturedProperties = () => {
                   <Search className="w-7 h-7 text-muted-foreground" />
                 </div>
                 <h3 className="font-heading font-bold text-lg mb-2">No properties found</h3>
-                <p className="text-muted-foreground text-sm mb-4 max-w-sm mx-auto">Try adjusting your search or filters.</p>
+                <p className="text-muted-foreground text-sm mb-4 max-w-sm mx-auto font-medium">
+                  No vacant properties match your filter.
+                </p>
                 <Button variant="outline" size="sm" className="rounded-full" onClick={clearFilters}>Clear all filters</Button>
               </div>
             ) : (

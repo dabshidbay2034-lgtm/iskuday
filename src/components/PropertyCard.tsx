@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
-import { Bed, Bath, Car, Cctv, Building2, MapPin, Heart, Armchair } from "lucide-react";
+import { Bed, Bath, Car, Cctv, Building2, MapPin, Heart, Armchair, Building } from "lucide-react";
 import { toast } from "sonner";
 import type { Property } from "@/lib/types";
 
@@ -37,6 +37,15 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
     onToggleFavorite?.(property.id);
   };
 
+  const handleAgencyClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const extendedProp = property as Property & { org_id?: string };
+    const agencyId = extendedProp.org_id || property.owner_id;
+    if (agencyId) {
+      navigate(`/agency/${agencyId}`);
+    }
+  };
+
   return (
     <div
       onClick={() => { onClick?.(); navigate(`/property/${property.id}`); }}
@@ -52,7 +61,7 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
         />
         <div className="absolute inset-0 bg-gradient-to-t from-foreground/25 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-        <div className="absolute top-3 left-3 flex gap-1.5">
+        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
           <Badge className={`${typeColors[property.type]} border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm`}>
             {typeLabels[property.type] || property.type}
           </Badge>
@@ -79,17 +88,30 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
       </div>
 
       {/* Content — clean Airbnb-style info block beneath the image */}
-      <div className="pt-3 px-0.5">
+      <div className="pt-3 px-0.5 space-y-1">
         <h3 className="font-heading font-bold text-foreground text-[15px] leading-snug truncate">
           {property.title}
         </h3>
-        <div className="flex items-center gap-1 text-muted-foreground text-sm mt-0.5">
-          <MapPin className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">{property.location}</span>
+        <div className="flex items-center justify-between text-muted-foreground text-sm">
+          <div className="flex items-center gap-1 truncate">
+            <MapPin className="w-3.5 h-3.5 shrink-0 text-primary" />
+            <span className="truncate">{property.location}</span>
+          </div>
+
+          {/* Link to Agency / Owner Profile */}
+          {((property as Property & { org_id?: string }).org_id || property.owner_id) && (
+            <button
+              onClick={handleAgencyClick}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline shrink-0 ml-2"
+              title="View Agency / Owner Profile"
+            >
+              <Building className="w-3 h-3" /> Agency
+            </button>
+          )}
         </div>
 
         {/* Features */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground pt-1">
           {property.bedrooms != null && (
             <span className="flex items-center gap-1">
               <Bed className="w-3.5 h-3.5" /> {property.bedrooms}
@@ -118,7 +140,7 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
         </div>
 
         {/* Price */}
-        <div className="mt-2 flex items-baseline gap-1">
+        <div className="pt-1 flex items-baseline gap-1">
           <span className="font-heading font-extrabold text-foreground text-base">
             ${property.price.toLocaleString()}
           </span>

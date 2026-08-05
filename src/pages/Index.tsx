@@ -5,7 +5,7 @@ import DistrictSection from "@/components/DistrictSection";
 import FeaturedProperties from "@/components/FeaturedProperties";
 import BottomNav from "@/components/BottomNav";
 import InstallBanner from "@/components/InstallBanner";
-import { Shield, Clock, HeadphonesIcon, Phone, MessageCircle } from "lucide-react";
+import { Shield, Clock, HeadphonesIcon, MessageCircle } from "lucide-react";
 
 const features = [
   { icon: Shield, title: "Verified Listings", desc: "Every property is checked by our team" },
@@ -69,19 +69,13 @@ const Index = () => {
                 <p className="text-muted-foreground text-xs">© 2026 · All rights reserved</p>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row items-center gap-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-full px-4 py-2">
-                <Phone className="w-4 h-4 text-primary shrink-0" />
-                <a href="tel:+252612018955" className="hover:text-foreground transition-colors">+252 612 018 955</a>
-                <span className="text-border">|</span>
-                <a href="tel:+252612679357" className="hover:text-foreground transition-colors">+252 612 679 357</a>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-full px-4 py-2">
-                <MessageCircle className="w-4 h-4 text-success shrink-0" />
-                <a href="https://wa.me/252612018955" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">WhatsApp 1</a>
-                <span className="text-border">|</span>
-                <a href="https://wa.me/252612679357" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">WhatsApp 2</a>
-              </div>
+            <div className="flex items-center gap-3">
+              <a
+                href="/services"
+                className="flex items-center gap-2 text-sm font-semibold text-primary-foreground bg-primary rounded-full px-5 py-2.5 shadow-card hover:bg-primary/90 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" /> Request Services & Inquiries
+              </a>
             </div>
           </div>
         </div>

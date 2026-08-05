@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,25 +10,19 @@ import { Button } from "@/components/ui/button";
 import { Heart, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import { useFavorites } from "@/hooks/use-favorites";
-import type { Property } from "@/lib/types";
-import type { Session } from "@supabase/supabase-js";
+import { useAppAuth } from "@/hooks/use-auth";
+import type { Property, PropertyType } from "@/lib/types";
 
 const Saved = () => {
   const navigate = useNavigate();
-  const [session, setSession] = useState<Session | null>(null);
+  const { isSignedIn } = useAppAuth();
   const { favoriteIds, isFavorite, toggleFavorite, isAuthenticated } = useFavorites();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) navigate("/signin");
-      setSession(session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      if (!s) navigate("/signin");
-      setSession(s);
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    if (!isSignedIn) {
+      navigate("/signin");
+    }
+  }, [isSignedIn, navigate]);
 
   const { data: dbProperties, isLoading } = useQuery({
     queryKey: ["saved-properties", favoriteIds],
@@ -41,7 +35,7 @@ const Saved = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !!session?.user?.id && favoriteIds.length > 0,
+    enabled: isSignedIn && favoriteIds.length > 0,
   });
 
   const properties: Property[] = (dbProperties || []).map((p: {
@@ -69,8 +63,11 @@ const Saved = () => {
   }) => ({
     id: p.id,
     title: p.title,
-    description: p.description,
-    type: p.type,
+    // The database allows NULL on these; the Property type does not. Coerce at
+    // this boundary rather than widening Property, which every card and detail
+    // view already relies on being non-null.
+    description: p.description ?? "",
+    type: p.type as PropertyType,
     price: p.price,
     deposit: p.deposit,
     location: p.location,
@@ -81,18 +78,19 @@ const Saved = () => {
     created_at: p.created_at,
     is_available: p.is_available,
     is_daily_rate: p.is_daily_rate,
-    bedrooms: p.bedrooms,
-    living_rooms: p.living_rooms,
-    kitchens: p.kitchens,
-    toilets: p.toilets,
-    has_cctv: p.has_cctv,
-    has_parking: p.has_parking,
-    floor_number: p.floor_number,
-    has_balcony: p.has_balcony,
-    is_furnished: p.is_furnished,
+    // Optional on Property, so NULL becomes undefined rather than null.
+    bedrooms: p.bedrooms ?? undefined,
+    living_rooms: p.living_rooms ?? undefined,
+    kitchens: p.kitchens ?? undefined,
+    toilets: p.toilets ?? undefined,
+    has_cctv: p.has_cctv ?? undefined,
+    has_parking: p.has_parking ?? undefined,
+    floor_number: p.floor_number ?? undefined,
+    has_balcony: p.has_balcony ?? undefined,
+    is_furnished: p.is_furnished ?? undefined,
   }));
 
-  if (!session) return null;
+  if (!isSignedIn) return null;
 
   return (
     <div className="min-h-screen bg-background pb-24">

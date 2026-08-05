@@ -6,53 +6,37 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, X, User, LogIn, Plus, LayoutDashboard, Settings, LogOut, Heart, ChevronDown } from "lucide-react";
+import { Menu, X, User, LogIn, Plus, LayoutDashboard, Settings, LogOut, Heart, ChevronDown, Shield, Eye } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
-import type { Session } from "@supabase/supabase-js";
+import { useAppAuth } from "@/hooks/use-auth";
+import { useClerk } from "@clerk/clerk-react";
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<{ full_name: string; avatar_url: string | null } | null>(null);
+  const { isSignedIn, user, orgId, platformRole } = useAppAuth();
 
-  useEffect(() => {
-    const checkPhoneRequired = async (userId: string) => {
-      const { data } = await supabase.from("profiles").select("phone").eq("user_id", userId).maybeSingle();
-      if (!data?.phone && !["/complete-profile", "/signin", "/signup", "/forgot-password", "/reset-password"].includes(window.location.pathname)) {
-        navigate("/complete-profile");
-      }
-    };
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user?.id) checkPhoneRequired(session.user.id);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setSession(session);
-      if (session?.user?.id && _e === "SIGNED_IN") {
-        checkPhoneRequired(session.user.id);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  useEffect(() => {
-    if (!session?.user?.id) { setProfile(null); return; }
-    supabase.from("profiles").select("full_name, avatar_url").eq("user_id", session.user.id).single()
-      .then(({ data }) => { if (data) setProfile(data); });
-  }, [session?.user?.id]);
+  // Who sees the "Manage" entry: agency staff (they have an active org) and
+  // solo landlords (no org, but a listing-capable platform role). Renters see
+  // nothing. This mirrors who actually has rows behind /manage — the route
+  // itself is only signed-in-gated, since RLS does the real scoping.
+  const canManageProperties =
+    isSignedIn &&
+    (Boolean(orgId) ||
+      ['owner', 'agent', 'hotel_manager', 'admin'].includes(platformRole ?? ''));
+  const { signOut } = useClerk();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate("/");
   };
 
-  const initials = profile?.full_name
-    ?.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "U";
+  const fullName = user?.fullName || user?.firstName || "User";
+  const avatarUrl = user?.imageUrl;
+  const email = user?.primaryEmailAddress?.emailAddress;
 
-  const isLoggedIn = !!session;
+  const initials = fullName
+    .split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "U";
 
   return (
     <header className="sticky top-0 z-50 bg-background/85 backdrop-blur-xl border-b border-border/70">
@@ -66,7 +50,7 @@ const Header = () => {
           />
         </Link>
 
-        {/* Desktop nav — pill-style links on a soft rounded rail, Airbnb-like */}
+        {/* Desktop nav */}
         <nav className="hidden lg:flex items-center gap-1 p-1 rounded-full border border-border/70 bg-card/60">
           <Link to="/" className="px-4 py-2 text-sm font-semibold text-foreground rounded-full hover:bg-muted transition-colors">Home</Link>
           <Link to="/properties" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Explore</Link>
@@ -89,12 +73,16 @@ const Header = () => {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Link to="/services" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Services</Link>
           <Link to="/about" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">About</Link>
+          {canManageProperties && (
+            <Link to="/manage" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Manage</Link>
+          )}
         </nav>
 
         <div className="hidden lg:flex items-center gap-2">
           <InstallPWAButton />
-          {isLoggedIn ? (
+          {isSignedIn ? (
             <>
               <Button
                 variant="ghost"
@@ -109,15 +97,15 @@ const Header = () => {
                   <button className="flex items-center gap-2 rounded-full border border-border bg-card pl-3 pr-1 py-1 shadow-card hover:shadow-elevated transition-shadow">
                     <Menu className="w-4 h-4 text-foreground" />
                     <Avatar className="w-7 h-7">
-                      {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt={profile.full_name} /> : null}
+                      {avatarUrl ? <AvatarImage src={avatarUrl} alt={fullName} /> : null}
                       <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
                     </Avatar>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52 rounded-2xl">
                   <div className="px-3 py-2.5">
-                    <p className="text-sm font-semibold text-foreground truncate">{profile?.full_name || "User"}</p>
-                    <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+                    <p className="text-sm font-semibold text-foreground truncate">{fullName}</p>
+                    <p className="text-xs text-muted-foreground truncate">{email}</p>
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => navigate("/dashboard")} className="rounded-lg">
@@ -129,6 +117,25 @@ const Header = () => {
                   <DropdownMenuItem onClick={() => navigate("/profile")} className="rounded-lg">
                     <Settings className="w-4 h-4 mr-2" /> Settings
                   </DropdownMenuItem>
+                  {platformRole === "admin" && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => navigate("/admin-panel")} className="rounded-lg">
+                        <Shield className="w-4 h-4 mr-2" /> Admin Panel
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate("/admin/services")} className="rounded-lg">
+                        <Settings className="w-4 h-4 mr-2" /> Manage Services
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {platformRole === "semi_admin" && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => navigate("/semiadmin")} className="rounded-lg">
+                        <Eye className="w-4 h-4 mr-2" /> Overview Panel
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive rounded-lg">
                     <LogOut className="w-4 h-4 mr-2" /> Sign Out
@@ -146,14 +153,14 @@ const Header = () => {
           )}
         </div>
 
-        {/* Mobile menu toggle — Airbnb-style avatar+hamburger pill */}
+        {/* Mobile menu toggle */}
         <button
           className="lg:hidden flex items-center gap-2 rounded-full border border-border bg-card pl-3 pr-1 py-1 shadow-card"
           onClick={() => setIsOpen(!isOpen)}
         >
           {isOpen ? <X className="w-4 h-4 text-foreground" /> : <Menu className="w-4 h-4 text-foreground" />}
           <Avatar className="w-7 h-7">
-            {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt={profile.full_name} /> : null}
+            {avatarUrl ? <AvatarImage src={avatarUrl} alt={fullName} /> : null}
             <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{initials}</AvatarFallback>
           </Avatar>
         </button>
@@ -172,6 +179,10 @@ const Header = () => {
               <Link to="/" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Home</Link>
               <Link to="/about" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>About</Link>
               <Link to="/properties" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>All Properties</Link>
+              <Link to="/services" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Services</Link>
+              {canManageProperties && (
+                <Link to="/manage" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Manage Properties</Link>
+              )}
 
               {/* Property Categories */}
               <div className="py-2 px-3">
@@ -186,16 +197,16 @@ const Header = () => {
               <div className="px-3"><InstallPWAButton /></div>
 
               <div className="mt-2 pt-3 border-t border-border/70 px-3">
-                {isLoggedIn ? (
+                {isSignedIn ? (
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-3 py-1">
                       <Avatar className="w-10 h-10">
-                        {profile?.avatar_url ? <AvatarImage src={profile.avatar_url} alt={profile.full_name} /> : null}
+                        {avatarUrl ? <AvatarImage src={avatarUrl} alt={fullName} /> : null}
                         <AvatarFallback className="bg-primary text-primary-foreground text-sm font-bold">{initials}</AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">{profile?.full_name || "User"}</p>
-                        <p className="text-[11px] text-muted-foreground truncate">{session.user.email}</p>
+                        <p className="text-sm font-semibold text-foreground truncate">{fullName}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{email}</p>
                       </div>
                     </div>
                     <Button size="sm" className="rounded-full font-semibold w-full shadow-card" onClick={() => { navigate("/add-property"); setIsOpen(false); }}>
@@ -209,6 +220,21 @@ const Header = () => {
                         <Settings className="w-4 h-4" /> Settings
                       </Button>
                     </div>
+                    {platformRole === "admin" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button variant="outline" size="sm" className="rounded-full" onClick={() => { navigate("/admin-panel"); setIsOpen(false); }}>
+                          <Shield className="w-4 h-4" /> Admin
+                        </Button>
+                        <Button variant="outline" size="sm" className="rounded-full" onClick={() => { navigate("/admin/services"); setIsOpen(false); }}>
+                          <Settings className="w-4 h-4" /> Services
+                        </Button>
+                      </div>
+                    )}
+                    {platformRole === "semi_admin" && (
+                      <Button variant="outline" size="sm" className="rounded-full w-full" onClick={() => { navigate("/semiadmin"); setIsOpen(false); }}>
+                        <Eye className="w-4 h-4" /> Overview Panel
+                      </Button>
+                    )}
                     <Button variant="ghost" size="sm" className="text-destructive justify-start rounded-full" onClick={() => { handleSignOut(); setIsOpen(false); }}>
                       <LogOut className="w-4 h-4" /> Sign Out
                     </Button>

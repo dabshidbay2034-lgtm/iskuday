@@ -15,6 +15,8 @@ import {
   Search, UserCheck, UserX, Phone, Filter, EyeIcon
 } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
+import { useAppAuth } from "@/hooks/use-auth";
+import type { UserRole } from "@/lib/types";
 
 type PropertyWithDetails = Tables<"properties"> & {
   profiles: Tables<"profiles"> | null;
@@ -23,7 +25,10 @@ type PropertyWithDetails = Tables<"properties"> & {
 
 type UserWithRole = {
   user_id: string;
-  role: string;
+  // Shared UserRole, not a bare string and not an inline union — the same field
+  // in Admin.tsx drifted out of sync with the app_role enum by being re-spelled
+  // locally.
+  role: UserRole;
   is_verified: boolean;
   id: string;
   profile: Tables<"profiles"> | null;
@@ -33,34 +38,19 @@ const SemiAdmin = () => {
   const [properties, setProperties] = useState<PropertyWithDetails[]>([]);
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hasAccess, setHasAccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [userSearchTerm, setUserSearchTerm] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("all");
   const [userVerifiedFilter, setUserVerifiedFilter] = useState("all");
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isLoaded, isSignedIn, platformRole } = useAppAuth();
+  // Access is already gated by ProtectedRoute in App.tsx; no need for a
+  // redundant RPC. When the route guard + auth resolve we trust the role.
+  const hasAccess = isLoaded && isSignedIn && (platformRole === "admin" || platformRole === "semi_admin");
 
-  // Check semi_admin or admin access
-  useEffect(() => {
-    const checkAccess = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { navigate("/signin"); return; }
-
-      const { data: isAdmin } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" });
-      const { data: isSemiAdmin } = await supabase.rpc("has_role", { _user_id: user.id, _role: "semi_admin" });
-
-      if (!isAdmin && !isSemiAdmin) {
-        toast({ title: "Access Denied", description: "You don't have viewing privileges", variant: "destructive" });
-        navigate("/");
-        return;
-      }
-      setHasAccess(true);
-    };
-    checkAccess();
-  }, [navigate, toast]);
-
-  // Load properties
+  // Load properties — single query with a batch profile fetch instead of
+  // N+1 per-property profile lookups.
   useEffect(() => {
     if (!hasAccess) return;
     const loadProperties = async () => {
@@ -73,21 +63,25 @@ const SemiAdmin = () => {
       if (error) {
         toast({ title: "Error loading properties", description: error.message, variant: "destructive" });
       } else if (data) {
-        const propertiesWithOwners = await Promise.all(
-          data.map(async (property) => {
-            const { data: ownerProfile } = await supabase
-              .from("profiles").select("*").eq("user_id", property.owner_id).single();
-            return { ...property, profiles: ownerProfile };
-          })
+        const ownerIds = [...new Set(data.map((p) => p.owner_id).filter(Boolean))];
+        const { data: profiles } = ownerIds.length > 0
+          ? await supabase.from("profiles").select("*").in("user_id", ownerIds)
+          : { data: [] };
+        const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
+
+        setProperties(
+          data.map((property) => ({
+            ...property,
+            profiles: profileMap.get(property.owner_id) ?? null,
+          })),
         );
-        setProperties(propertiesWithOwners);
       }
       setLoading(false);
     };
     loadProperties();
   }, [hasAccess, toast]);
 
-  // Load users with roles
+  // Load users with roles — single batch fetch for profiles instead of N+1.
   useEffect(() => {
     if (!hasAccess) return;
     const loadUsers = async () => {
@@ -102,14 +96,25 @@ const SemiAdmin = () => {
       }
 
       if (roles) {
-        const usersWithProfiles = await Promise.all(
-          roles.map(async (role) => {
-            const { data: profile } = await supabase
-              .from("profiles").select("*").eq("user_id", role.user_id).single();
-            return { ...role, profile } as UserWithRole;
-          })
+        const userIds = roles.map((r) => r.user_id);
+        // Fetch profiles in a single batch (no N+1). An empty user list short-
+        // circuits so .in() never receives an empty array.
+        let profiles: Tables<"profiles">[] = [];
+        if (userIds.length > 0) {
+          const profilesRes = await supabase
+            .from("profiles")
+            .select("*")
+            .in("user_id", userIds);
+          profiles = (profilesRes.data as Tables<"profiles">[]) ?? [];
+        }
+        const profileMap = new Map(profiles.map((p) => [p.user_id, p]));
+
+        setUsers(
+          roles.map((role) => ({
+            ...role,
+            profile: profileMap.get(role.user_id) ?? null,
+          })) as UserWithRole[],
         );
-        setUsers(usersWithProfiles);
       }
     };
     loadUsers();
@@ -122,10 +127,12 @@ const SemiAdmin = () => {
   );
 
   const filteredUsers = users.filter(user => {
+    // Phone is deliberately not searchable here: numbers live in
+    // profile_contacts, which only the owning user or a PLATFORM admin can
+    // read. A semi_admin is neither, so it would always match nothing.
     const matchesSearch =
       user.profile?.full_name.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-      user.role.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-      user.profile?.phone?.toLowerCase().includes(userSearchTerm.toLowerCase());
+      user.role.toLowerCase().includes(userSearchTerm.toLowerCase());
     const matchesRole = userRoleFilter === "all" || user.role === userRoleFilter;
     const matchesVerified =
       userVerifiedFilter === "all" ||
@@ -148,6 +155,19 @@ const SemiAdmin = () => {
     return "secondary";
   };
 
+  // Show spinner while auth resolves. Only show "restricted" once we know the
+  // role and it doesn't match — avoids flashing the card to legitimate admins.
+  if (!isLoaded || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!hasAccess) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -167,17 +187,6 @@ const SemiAdmin = () => {
             </Alert>
           </CardContent>
         </Card>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Loading dashboard...</p>
-        </div>
       </div>
     );
   }
@@ -371,13 +380,13 @@ const SemiAdmin = () => {
                             {user.profile?.full_name || "Unknown"}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            {user.profile?.phone ? (
-                              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                <Phone className="w-3 h-3" /> {user.profile.phone}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No phone</span>
-                            )}
+                            {/* Phone numbers are platform-admin only (plan R4).
+                                A semi_admin gets no rows back from
+                                profile_contacts under its RLS policy, so this
+                                shows the hidden state rather than an error. */}
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Phone className="w-3 h-3" /> Hidden
+                            </span>
                           </div>
                         </div>
                         <Badge variant={roleBadgeVariant(user.role)} className="text-[10px] shrink-0">

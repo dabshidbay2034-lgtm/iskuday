@@ -13,12 +13,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import {
   Home, Building2, Hotel, Briefcase, SlidersHorizontal, Search, MapPin, X,
-  Bed, DollarSign, Car, Cctv, Waves, ArrowUpDown, PlusCircle,
-  Armchair, CalendarDays,
+  Bed, DollarSign, Car, Cctv, Waves, ArrowUpDown, Armchair, CalendarDays,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
-import type { Property } from "@/lib/types";
+import type { Property, PropertyType } from "@/lib/types";
+
+interface RawPropertyRecord {
+  id: string;
+  title: string;
+  description: string;
+  type: string;
+  price: number;
+  deposit: number;
+  location: string;
+  owner_id?: string;
+  org_id?: string;
+  created_at: string;
+  is_available?: boolean;
+  is_listed?: boolean;
+  occupancy_status?: string;
+  is_daily_rate?: boolean;
+  bedrooms?: number;
+  living_rooms?: number;
+  kitchens?: number;
+  toilets?: number;
+  has_cctv?: boolean;
+  has_parking?: boolean;
+  floor_number?: number;
+  has_balcony?: boolean;
+  is_furnished?: boolean;
+  property_images?: Array<{ image_url: string; sort_order?: number }>;
+}
 
 const typeFilters = [
   { value: "", label: "All", icon: SlidersHorizontal },
@@ -62,72 +88,35 @@ const Properties = () => {
   const { data: dbProperties, isLoading } = useQuery({
     queryKey: ["properties", activeType],
     queryFn: async () => {
+      // Query properties where is_listed = true AND occupancy_status = 'vacant'
       let query = supabase
         .from("properties")
         .select("*, property_images(image_url, sort_order)")
+        .or("is_listed.eq.true,is_listed.is.null")
+        .or("occupancy_status.eq.vacant,occupancy_status.is.null")
         .eq("is_available", true)
         .order("created_at", { ascending: false });
 
       if (activeType) {
+        // activeType comes from a URL query param; cast to the database enum
+        // so the generated column types are satisfied.
         query = query.eq("type", activeType as "villa" | "apartment" | "hotel" | "commercial");
       }
 
       const { data, error } = await query;
       if (error) throw error;
-      return data;
+      return (data as unknown as RawPropertyRecord[]) || [];
     },
   });
 
-  // Client-side filtering
+  // Client-side filtering and strict enforcement of listed + vacant status
   const properties: Property[] = (dbProperties || [])
-    .map((p: {
-      id: string;
-      title: string;
-      description: string | null;
-      type: string;
-      price: number;
-      deposit: number;
-      location: string;
-      property_images: { sort_order: number; image_url: string }[] | null;
-      owner_id: string;
-      created_at: string;
-      is_available: boolean;
-      is_daily_rate: boolean;
-      bedrooms: number | null;
-      living_rooms: number | null;
-      kitchens: number | null;
-      toilets: number | null;
-      has_cctv: boolean | null;
-      has_parking: boolean | null;
-      floor_number: number | null;
-      has_balcony: boolean | null;
-      is_furnished: boolean | null;
-    }) => ({
-      id: p.id,
-      title: p.title,
-      description: p.description,
-      type: p.type,
-      price: p.price,
-      deposit: p.deposit,
-      location: p.location,
-      images: (p.property_images || [])
-        .sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)
-        .map((img: { image_url: string }) => img.image_url),
-      owner_id: p.owner_id,
-      created_at: p.created_at,
-      is_available: p.is_available,
-      is_daily_rate: p.is_daily_rate,
-      bedrooms: p.bedrooms,
-      living_rooms: p.living_rooms,
-      kitchens: p.kitchens,
-      toilets: p.toilets,
-      has_cctv: p.has_cctv,
-      has_parking: p.has_parking,
-      floor_number: p.floor_number,
-      has_balcony: p.has_balcony,
-      is_furnished: p.is_furnished,
-    }))
-    .filter((p: Property) => {
+    .filter((p) => {
+      // Hard requirement: only show properties where is_listed = true AND occupancy_status = 'vacant'
+      const isListed = p.is_listed !== false;
+      const isVacant = p.occupancy_status ? p.occupancy_status === "vacant" : p.is_available !== false;
+      if (!isListed || !isVacant) return false;
+
       if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase()) && !p.location.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (district && district !== "all" && p.location !== district) return false;
       if (minPrice && p.price < Number(minPrice)) return false;
@@ -140,10 +129,35 @@ const Properties = () => {
       if (amenities.includes("daily_rate") && !p.is_daily_rate) return false;
       return true;
     })
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      description: p.description,
+      type: (p.type === "villa" ? "house" : p.type) as PropertyType,
+      price: p.price,
+      deposit: p.deposit,
+      location: p.location,
+      images: (p.property_images || [])
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((img) => img.image_url),
+      owner_id: p.owner_id || "",
+      org_id: p.org_id,
+      created_at: p.created_at,
+      is_available: p.is_available ?? true,
+      is_daily_rate: p.is_daily_rate,
+      bedrooms: p.bedrooms,
+      living_rooms: p.living_rooms,
+      kitchens: p.kitchens,
+      toilets: p.toilets,
+      has_cctv: p.has_cctv,
+      has_parking: p.has_parking,
+      floor_number: p.floor_number,
+      has_balcony: p.has_balcony,
+      is_furnished: p.is_furnished,
+    }))
     .sort((a: Property, b: Property) => {
       if (sortBy === "price_asc") return a.price - b.price;
       if (sortBy === "price_desc") return b.price - a.price;
-      // Default to newest
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
@@ -401,7 +415,7 @@ const Properties = () => {
             </div>
             <h3 className="font-heading font-bold text-lg mb-2">No properties found</h3>
             <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-              We couldn't find any properties matching your current filters. Try adjusting your search criteria.
+              We couldn't find any vacant properties matching your current filters. Try adjusting your search criteria.
             </p>
             <Button variant="outline" className="rounded-full" onClick={clearFilters}>
               Clear all filters
