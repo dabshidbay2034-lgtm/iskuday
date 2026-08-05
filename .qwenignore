@@ -1,0 +1,15 @@
+# Stray duplicate clone of this repo — not part of the project
+temp-repo/
+
+# Generated / vendored
+node_modules/
+dist/
+package-lock.json
+bun.lock
+bun.lockb
+
+# Binary assets the model can't use
+platform_kit/
+public/
+*.png
+*.ico

@@ -1,0 +1,19 @@
+{
+  "context": {
+    "fileName": ["AGENTS.md", "GEMINI.md"],
+    "fileFiltering": {
+      "respectGitIgnore": true,
+      "respectGeminiIgnore": true
+    }
+  },
+  "tools": {
+    "allowed": [
+      "run_shell_command(npm run lint)",
+      "run_shell_command(npm run test)",
+      "run_shell_command(npm run build)",
+      "run_shell_command(git status)",
+      "run_shell_command(git diff)",
+      "run_shell_command(git log)"
+    ]
+  }
+}
