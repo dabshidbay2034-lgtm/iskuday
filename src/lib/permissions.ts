@@ -27,8 +27,25 @@ export const PERMISSIONS = {
   RENT_MARK_PAID:   'org:rent:mark_paid',
   UTILITIES_VIEW:   'org:utilities:view',
   UTILITIES_RECORD: 'org:utilities:record',
-  TENANTS_MANAGE:   'org:tenants:manage',
+    TENANTS_MANAGE:   'org:tenants:manage',
   NOTES_MANAGE:     'org:notes:manage',
+
+  // Maintenance / expenses / lease documents (20260806000001).
+  // Recording a job or an expense is data entry, so agents AND assigned staff
+  // may do it; lease documents are contracts, so those stay manager-level for
+  // org staff (an assigned caretaker still may upload to their own unit).
+  MAINTENANCE_VIEW: 'org:maintenance:view',
+  MAINTENANCE_MANAGE: 'org:maintenance:manage',
+  EXPENSES_VIEW:    'org:expenses:view',
+  EXPENSES_RECORD:  'org:expenses:record',
+    LEASE_VIEW:       'org:lease:view',
+  LEASE_MANAGE:     'org:lease:manage',
+
+  // Hotel management + booking (20260807000001). Booking is front-desk work, so
+  // agents AND assigned staff manage it; viewers can read the reservations.
+  BOOKING_VIEW:        'org:booking:view',
+  BOOKING_MANAGE:      'org:booking:manage',
+  HOUSEKEEPING_MANAGE: 'org:housekeeping:manage',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -50,7 +67,7 @@ const ALL_PERMISSIONS: Permission[] = Object.values(PERMISSIONS);
 
 export const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
   [STAFF_ROLES.ADMIN]: ALL_PERMISSIONS,
-  [STAFF_ROLES.MANAGER]: [
+    [STAFF_ROLES.MANAGER]: [
     PERMISSIONS.PROPERTY_CREATE,
     PERMISSIONS.PROPERTY_EDIT,
     PERMISSIONS.PROPERTY_PUBLISH,
@@ -65,6 +82,15 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     PERMISSIONS.UTILITIES_RECORD,
     PERMISSIONS.TENANTS_MANAGE,
     PERMISSIONS.NOTES_MANAGE,
+    PERMISSIONS.MAINTENANCE_VIEW,
+    PERMISSIONS.MAINTENANCE_MANAGE,
+    PERMISSIONS.EXPENSES_VIEW,
+    PERMISSIONS.EXPENSES_RECORD,
+    PERMISSIONS.LEASE_VIEW,
+    PERMISSIONS.LEASE_MANAGE,
+    PERMISSIONS.BOOKING_VIEW,
+    PERMISSIONS.BOOKING_MANAGE,
+    PERMISSIONS.HOUSEKEEPING_MANAGE,
   ],
   [STAFF_ROLES.AGENT]: [
     PERMISSIONS.PROPERTY_CREATE,
@@ -77,10 +103,22 @@ export const ROLE_PERMISSIONS: Record<StaffRole, Permission[]> = {
     PERMISSIONS.UTILITIES_VIEW,
     PERMISSIONS.UTILITIES_RECORD,
     PERMISSIONS.NOTES_MANAGE,
+    PERMISSIONS.MAINTENANCE_VIEW,
+    PERMISSIONS.MAINTENANCE_MANAGE,
+    PERMISSIONS.EXPENSES_VIEW,
+    PERMISSIONS.EXPENSES_RECORD,
+    PERMISSIONS.LEASE_VIEW,
+    PERMISSIONS.BOOKING_VIEW,
+    PERMISSIONS.BOOKING_MANAGE,
+    PERMISSIONS.HOUSEKEEPING_MANAGE,
   ],
   [STAFF_ROLES.VIEWER]: [
     PERMISSIONS.RENT_VIEW,
     PERMISSIONS.UTILITIES_VIEW,
+    PERMISSIONS.MAINTENANCE_VIEW,
+    PERMISSIONS.EXPENSES_VIEW,
+    PERMISSIONS.LEASE_VIEW,
+    PERMISSIONS.BOOKING_VIEW,
   ] as Permission[],
 };
 

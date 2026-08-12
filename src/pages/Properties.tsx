@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useFavorites } from "@/hooks/use-favorites";
 import { useQuery } from "@tanstack/react-query";
@@ -58,16 +58,31 @@ const Properties = () => {
   const { isFavorite, toggleFavorite, isAuthenticated } = useFavorites();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeType = searchParams.get("type") || "";
-  const initialDistrict = searchParams.get("district") || searchParams.get("location") || "";
+  const districtParam = searchParams.get("district") || searchParams.get("location") || "";
+  const minPriceParam = searchParams.get("minPrice") || "";
+  const maxPriceParam = searchParams.get("maxPrice") || "";
+  const queryParam = searchParams.get("q") || "";
 
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
-  const [district, setDistrict] = useState(initialDistrict);
-  const [minPrice, setMinPrice] = useState(searchParams.get("minPrice") || "");
-  const [maxPrice, setMaxPrice] = useState(searchParams.get("maxPrice") || "");
+  const [searchQuery, setSearchQuery] = useState(queryParam);
+  const [district, setDistrict] = useState(districtParam);
+  const [minPrice, setMinPrice] = useState(minPriceParam);
+  const [maxPrice, setMaxPrice] = useState(maxPriceParam);
   const [bedrooms, setBedrooms] = useState("");
   const [amenities, setAmenities] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("newest");
   const [showFilters, setShowFilters] = useState(false);
+
+  // Re-seed the URL-backed filters whenever the query string changes under us.
+  // `useState` only reads its initial value on mount, and this page does not
+  // remount when you navigate from one /properties URL to another — so going
+  // from ?district=Waberi to ?type=villa kept filtering by Waberi while the URL
+  // claimed otherwise, and the results silently disagreed with the address bar.
+  useEffect(() => {
+    setSearchQuery(queryParam);
+    setDistrict(districtParam);
+    setMinPrice(minPriceParam);
+    setMaxPrice(maxPriceParam);
+  }, [queryParam, districtParam, minPriceParam, maxPriceParam]);
 
   const toggleAmenity = (a: string) => {
     setAmenities((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]);
@@ -327,11 +342,14 @@ const Properties = () => {
             <button
               key={f.value}
               onClick={() => {
-                if (f.value) {
-                  setSearchParams({ type: f.value });
-                } else {
-                  setSearchParams({});
-                }
+                // Edit the existing query string rather than replacing it —
+                // `setSearchParams({ type })` dropped district/price from the
+                // URL while they stayed active in state, so the address bar and
+                // the results parted ways.
+                const next = new URLSearchParams(searchParams);
+                if (f.value) next.set("type", f.value);
+                else next.delete("type");
+                setSearchParams(next);
               }}
               className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold border transition-colors ${
                 activeType === f.value
@@ -349,7 +367,12 @@ const Properties = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl md:text-2xl font-heading font-extrabold text-foreground tracking-tight">
-              {activeType ? `${activeType.charAt(0).toUpperCase() + activeType.slice(1)}s` : "All properties"}
+              {/* Read the label off typeFilters rather than capitalising the
+                  raw value: the database enum is "villa", so the old version
+                  titled the Houses page "Villas" (and "Commercials"). */}
+              {activeType
+                ? typeFilters.find((f) => f.value === activeType)?.label ?? "Properties"
+                : "All properties"}
             </h1>
             <p className="text-muted-foreground text-sm mt-0.5">
               {isLoading ? "Loading…" : `${properties.length} ${properties.length === 1 ? "property" : "properties"} found`}

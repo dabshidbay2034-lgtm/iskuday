@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
 import PhotoUploader from "@/components/PhotoUploader";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import {
   ArrowLeft, ArrowRight, Home, Building2, Hotel, Briefcase,
   Bed, Sofa, CookingPot, Bath, Cctv, Car, Layers, Waves,
@@ -21,6 +22,10 @@ import {
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppAuth } from "@/hooks/use-auth";
+import {
+  allowedPropertyTypes, canCreatePropertyType, wrongAccountTypeMessage,
+} from "@/lib/account-type";
+import type { UserRole } from "@/lib/types";
 import { useSavePropertyNotes } from "@/hooks/use-property-notes";
 
 type PropertyType = "villa" | "apartment" | "hotel" | "commercial";
@@ -53,6 +58,8 @@ const AddProperty = () => {
   const { isSignedIn, userId, user, appRole, orgId } = useAppAuth();
   const savePropertyNotes = useSavePropertyNotes();
 
+  const allowedTypes = allowedPropertyTypes(appRole as UserRole);
+
   useEffect(() => {
     if (!isSignedIn) {
       navigate("/signin");
@@ -65,6 +72,7 @@ const AddProperty = () => {
     }
     setCheckingAccess(false);
   }, [isSignedIn, appRole, navigate]);
+
   const [photos, setPhotos] = useState<File[]>([]);
 
   // Form state
@@ -97,6 +105,14 @@ const AddProperty = () => {
   const updateForm = (key: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  // A hotel account has exactly one option, so choosing it for them removes a
+  // step that only ever had one answer. Declared after `form`/`updateForm` so
+  // it isn't reading bindings that don't exist yet.
+  useEffect(() => {
+    if (allowedTypes.length === 1 && !form.type) updateForm("type", allowedTypes[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedTypes.length]);
 
   const canNext = () => {
     switch (step) {
@@ -144,6 +160,10 @@ const AddProperty = () => {
   const handleSubmit = async () => {
     if (photos.length < 2) {
       toast.error("Please upload at least 2 photos for your listing");
+      return;
+    }
+    if (!canCreatePropertyType(appRole as UserRole, form.type)) {
+      toast.error(wrongAccountTypeMessage(appRole as UserRole));
       return;
     }
     setLoading(true);
@@ -232,6 +252,16 @@ const AddProperty = () => {
         await Promise.all(uploadPromises);
       }
 
+      track(ANALYTICS_EVENTS.PROPERTY_LISTED, {
+        property_id: property.id,
+        type: form.type,
+        location: form.location,
+        price: Number(form.price) || 0,
+        photo_count: photos.length,
+        listed_by_role: appRole,
+        has_org: Boolean(orgId),
+      });
+
       toast.success("Property listed successfully!");
       queryClient.invalidateQueries({ queryKey: ["properties"] });
       queryClient.invalidateQueries({ queryKey: ["my-properties"] });
@@ -283,13 +313,28 @@ const AddProperty = () => {
             {/* Step 0: Property Type */}
             {step === 0 && (
               <div className="space-y-3">
-                <p className="text-sm font-medium text-foreground mb-4">What type of property are you listing?</p>
+                <p className="text-sm font-medium text-foreground mb-4">
+                  {allowedTypes.length === 1
+                    ? "You're listing a hotel room"
+                    : "What type of property are you listing?"}
+                </p>
+                {/* An agency lists rentals, a hotel lists rooms. Filtering here
+                    keeps the wrong option from ever being clickable; the submit
+                    handler re-checks because step state is client-side. */}
+                {allowedTypes.length === 1 && (
+                  <p className="text-xs text-muted-foreground mb-4">
+                    {wrongAccountTypeMessage(appRole as UserRole)}{" "}
+                    <Link to="/profile" className="text-primary underline underline-offset-2">
+                      Account settings
+                    </Link>
+                  </p>
+                )}
                 {([
                   { value: "villa", label: "House", icon: Home, desc: "Full home with rooms & amenities — monthly rent" },
                   { value: "apartment", label: "Apartment", icon: Building2, desc: "Apartment unit with floor & balcony — monthly rent" },
                   { value: "hotel", label: "Hotel", icon: Hotel, desc: "Hotel room or suite — daily rate" },
                   { value: "commercial", label: "Commercial", icon: Briefcase, desc: "Office, shop or business space — monthly rent" },
-                ] as const).map((opt) => (
+                ] as const).filter((opt) => allowedTypes.includes(opt.value)).map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => updateForm("type", opt.value)}

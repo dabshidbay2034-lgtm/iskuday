@@ -10,6 +10,7 @@ import { Phone, User } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import type { UserRole } from "@/lib/types";
 import { setPlatformRole } from "@/lib/user-role";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 
 const CompleteProfile = () => {
   const navigate = useNavigate();
@@ -93,6 +94,10 @@ const CompleteProfile = () => {
       console.error("Failed to save profile", { contactError, roleError });
       toast.error(`Failed to save profile: ${failure.message}`);
     } else {
+      // The role chosen here is the single most useful signup property — it
+      // splits the funnel into renters vs. the owners/agents who supply stock.
+      // The phone number entered above is deliberately not sent.
+      track(ANALYTICS_EVENTS.SIGNUP_COMPLETED, { role });
       toast.success("Profile completed!");
       navigate("/");
     }

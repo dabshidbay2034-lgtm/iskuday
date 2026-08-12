@@ -1,13 +1,18 @@
+import { Link } from "react-router-dom";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
 import { Building2, Users, Shield, Award, MapPin, Phone, Mail, Clock } from "lucide-react";
 
 const About = () => {
   return (
-    <div className="min-h-screen bg-background">
+    // Clearance for the fixed z-50 BottomNav lives on the root and is gated to
+    // mobile, the way every other page does it. It was sitting on <main>
+    // instead, unconditionally — spending the same 80px on desktop where the
+    // nav is md:hidden, and leaving anything outside <main> uncovered.
+    <div className="min-h-screen bg-background pb-20 md:pb-0">
       <Header />
 
-      <main className="pt-20 pb-20">
+      <main className="pt-20">
         {/* Hero Section */}
         <section className="py-16 bg-gradient-to-br from-primary/5 via-background to-secondary/5">
           <div className="container mx-auto px-4">
@@ -183,6 +188,14 @@ const About = () => {
                   <p className="text-muted-foreground">Mogadishu, Somalia</p>
                 </div>
               </div>
+
+              <p className="text-center text-muted-foreground mt-12">
+                Read about{" "}
+                <Link to="/privacy" className="text-primary font-medium hover:underline">
+                  privacy and analytics
+                </Link>{" "}
+                — what we measure, and what we don't.
+              </p>
             </div>
           </div>
         </section>

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
 import CategorySection from "@/components/CategorySection";
@@ -66,7 +67,12 @@ const Index = () => {
               </div>
               <div>
                 <p className="font-heading font-bold text-foreground text-sm leading-tight">MogadishuRents</p>
-                <p className="text-muted-foreground text-xs">© 2026 · All rights reserved</p>
+                <p className="text-muted-foreground text-xs">
+                  © 2026 · All rights reserved ·{" "}
+                  <Link to="/privacy" className="hover:text-foreground transition-colors underline-offset-2 hover:underline">
+                    Privacy
+                  </Link>
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-3">

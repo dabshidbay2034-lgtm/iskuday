@@ -20,6 +20,12 @@ import { Switch } from "@/components/ui/switch";
 import { OccupancyBadge } from "@/components/manage/portfolio-summary";
 import { RentLedgerTable } from "@/components/manage/rent-ledger-table";
 import { UtilityBillsTable } from "@/components/manage/utility-bills-table";
+import { ExpensesTable } from "@/components/manage/expenses-table";
+import { MaintenanceCard } from "@/components/manage/maintenance-card";
+import { LeaseDocumentsCard } from "@/components/manage/lease-documents-card";
+import { PropertyStaffCard } from "@/components/manage/property-staff-card";
+import { HotelBookingsCard } from "@/components/manage/hotel-bookings-card";
+import { HousekeepingCard } from "@/components/manage/housekeeping-card";
 
 /**
  * /manage/property/:id — everything the agency tracks about one unit
@@ -84,19 +90,33 @@ const ManageProperty = () => {
 
   return (
     <PropertyShell>
-      <PropertyHeaderCard property={property} />
+          <PropertyHeaderCard property={property} />
 
-      <RentLedgerTable property={property} />
+          <RentLedgerTable property={property} />
 
-      <UtilityBillsTable property={property} />
+          <UtilityBillsTable property={property} />
 
-      {/*
-        Private notes (NOTES_MANAGE) and the tenant record (TENANTS_MANAGE) mount
-        here as siblings — each takes `property` and loads its own data.
-      */}
-    </PropertyShell>
-  );
-};
+          <ExpensesTable property={property} />
+
+          <MaintenanceCard property={property} />
+
+          <LeaseDocumentsCard property={property} />
+
+          <PropertyStaffCard property={property} />
+
+          {/* Hotel management — a hotel room gets its booking + housekeeping
+              surfaces here. Each card self-gates on type='hotel' and rights. */}
+          <HotelBookingsCard property={property} />
+
+          <HousekeepingCard property={property} />
+
+          {/*
+            Private notes (NOTES_MANAGE) and the tenant record (TENANTS_MANAGE) mount
+            here as siblings — each takes `property` and loads its own data.
+          */}
+        </PropertyShell>
+      );
+    };
 
 /** Page chrome shared by every state of this route. */
 function PropertyShell({ children }: { children: React.ReactNode }) {

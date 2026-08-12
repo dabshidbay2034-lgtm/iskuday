@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Plus, Home, Building2, Hotel, MapPin, Trash2,
   Pencil, User, LogOut, Eye, DollarSign, AlertCircle, Clock,
-  ImageIcon, ChevronLeft, ChevronRight, X,
+  ImageIcon, ChevronLeft, ChevronRight, X, Store,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { motion } from "framer-motion";
@@ -27,17 +27,16 @@ import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { useAppAuth } from "@/hooks/use-auth";
 import { useClerk } from "@clerk/clerk-react";
 import type { Database } from "@/integrations/supabase/types";
+import { propertyTypeClass, propertyTypeLabel } from "@/lib/property-display";
 
 /** A properties row exactly as the database returns it. */
 type EditableProperty = Database["public"]["Tables"]["properties"]["Row"];
 
-const typeColors: Record<string, string> = {
-  villa: "bg-success text-success-foreground",
-  apartment: "bg-primary text-primary-foreground",
-  hotel: "bg-hotel text-hotel-foreground",
-};
+// Colours and labels come from lib/property-display so this page cannot drift
+// from the cards again — the private copy that used to live here was missing
+// `commercial` entirely, which rendered those badges with no colour classes.
 const typeIcons: Record<string, React.ElementType> = {
-  villa: Home, apartment: Building2, hotel: Hotel,
+  villa: Home, house: Home, apartment: Building2, hotel: Hotel, commercial: Store,
 };
 
 type TabType = "listings";
@@ -306,8 +305,8 @@ const Dashboard = () => {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <Badge className={`${typeColors[p.type]} text-[9px] uppercase tracking-wider font-semibold rounded-full px-2`}>
-                        {p.type}
+                      <Badge className={`${propertyTypeClass(p.type)} text-[9px] uppercase tracking-wider font-semibold rounded-full px-2`}>
+                        {propertyTypeLabel(p.type)}
                       </Badge>
                       {p.is_available ? (
                         <Badge className="bg-success/10 text-success border-success/20 text-[9px] rounded-full">Active</Badge>

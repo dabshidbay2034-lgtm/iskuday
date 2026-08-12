@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
 import ImageGallery from "@/components/ImageGallery";
+import { BookingRequestForm } from "@/components/BookingRequestForm";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,8 @@ import {
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { useAppAuth } from "@/hooks/use-auth";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
+import { propertyTypeClass, propertyTypeLabel } from "@/lib/property-display";
 
 const PropertyDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -22,20 +25,6 @@ const PropertyDetail = () => {
   const { userId: currentUserId, appRole } = useAppAuth();
   const isAdmin = appRole === "admin";
   const isSemiAdmin = appRole === "semi_admin";
-
-const typeColors: Record<string, string> = {
-  villa: "bg-success text-success-foreground",
-  apartment: "bg-info text-info-foreground",
-  hotel: "bg-hotel text-hotel-foreground",
-  commercial: "bg-warning text-warning-foreground",
-};
-const typeLabels: Record<string, string> = {
-  villa: "House",
-  apartment: "Apartment",
-  hotel: "Hotel",
-  commercial: "Commercial",
-};
-
 
   // Delegate view counting to the Edge Function which handles:
   //  - owner self-count prevention
@@ -93,6 +82,22 @@ const typeLabels: Record<string, string> = {
     },
     enabled: !!property?.owner_id,
   });
+
+  // Separate from the increment-view effect above, which fires on the id alone:
+  // this one waits for the row so the event carries the type/district/price that
+  // make "what do people actually look at?" answerable. Keyed on property.id, not
+  // the object, so a refetch doesn't re-count the same view.
+  useEffect(() => {
+    if (!property) return;
+    track(ANALYTICS_EVENTS.PROPERTY_VIEWED, {
+      property_id: property.id,
+      type: property.type,
+      location: property.location,
+      price: property.price,
+      is_daily_rate: property.is_daily_rate ?? false,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [property?.id]);
 
   if (isLoading) {
     return (
@@ -160,9 +165,9 @@ const typeLabels: Record<string, string> = {
             {/* Title + badge */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Badge className={`${typeColors[property.type]} text-[10px] uppercase tracking-wider font-semibold rounded-full px-2.5`}>
+                <Badge className={`${propertyTypeClass(property.type)} text-[10px] uppercase tracking-wider font-semibold rounded-full px-2.5`}>
                   {property.type === "hotel" ? <Hotel className="w-3 h-3 mr-1" /> : <Home className="w-3 h-3 mr-1" />}
-                  {typeLabels[property.type] || property.type}
+                  {propertyTypeLabel(property.type)}
                 </Badge>
                 {property.is_available ? (
                   <Badge className="bg-success/10 text-success border-success/20 text-[10px] rounded-full">Available</Badge>
@@ -244,8 +249,20 @@ const typeLabels: Record<string, string> = {
             </div>
           </div>
 
-          {/* Sidebar */}
+                    {/* Sidebar */}
           <div className="space-y-6">
+            {/* Public booking request — only nightly-rate hotel rooms are
+                bookable, and only while the unit is available. Uses the secure
+                create_booking_request RPC so a visitor never touches org_id or
+                an amount (20260807000001). */}
+            {isHotel && property.is_available && (
+              <BookingRequestForm
+                roomId={property.id}
+                roomTitle={property.title}
+                nightlyRate={property.price ?? 0}
+              />
+            )}
+
             {/* Owner card - Hidden as requested */}
             {/* <div className="p-5 rounded-2xl bg-card border border-border shadow-card space-y-4">
               <h3 className="font-heading font-bold text-foreground text-lg">Listed by</h3>
@@ -279,7 +296,7 @@ const typeLabels: Record<string, string> = {
               `Hi, I'm interested in this property on MogadishuRents:\n\n` +
               `🏠 *${property.title}*\n` +
               `📍 Location: ${property.location}\n` +
-              `🏷️ Type: ${typeLabels[property.type] || property.type}\n` +
+              `🏷️ Type: ${propertyTypeLabel(property.type)}\n` +
               `💰 Price: $${property.price.toLocaleString()}/${property.type === 'hotel' ? 'night' : 'mo'}\n` +
               `💵 Deposit: $${property.deposit.toLocaleString()}\n` +
               (property.bedrooms ? `🛏️ Bedrooms: ${property.bedrooms}\n` : '') +
@@ -289,6 +306,14 @@ const typeLabels: Record<string, string> = {
             target="_blank"
             rel="noopener noreferrer"
             className="w-full"
+            onClick={() =>
+              track(ANALYTICS_EVENTS.PROPERTY_CONTACT_CLICKED, {
+                property_id: property.id,
+                type: property.type,
+                location: property.location,
+                price: property.price,
+              })
+            }
           >
             <Button className="w-full bg-[#25D366] hover:bg-[#1da851] text-white font-semibold text-base py-6 rounded-2xl shadow-lg flex items-center justify-center gap-3">
               <MessageCircle className="w-5 h-5" />

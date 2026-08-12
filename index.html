@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- No maximum-scale/user-scalable: blocking pinch-zoom fails WCAG 1.4.4 on
+         a UI that leans on 10-11px labels, for an audience that is almost
+         entirely on phones. viewport-fit=cover is what makes env(safe-area-*)
+         resolve to anything but 0 — .safe-area-bottom in index.css depends on it. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>MogadishuRents — Rent Houses, Apartments & Hotels in Mogadishu</title>
     <meta name="description" content="MogadishuRents is Mogadishu's #1 rental platform. Browse verified houses, apartments, hotels & commercial spaces. List your property or find your next home today." />
     <meta name="keywords" content="Mogadishu rent, houses for rent Mogadishu, apartments Mogadishu, hotel rooms Somalia, commercial space Mogadishu, kiro Mogadishu, guri kiro" />

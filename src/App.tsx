@@ -7,10 +7,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import AnalyticsBridge from "@/components/AnalyticsBridge";
+import AcceptInvitesOnSignIn from "@/components/hotel/AcceptInvitesOnSignIn";
 
 // Lazy load pages for better performance
 const Index = lazy(() => import("./pages/Index"));
 const About = lazy(() => import("./pages/About"));
+const Privacy = lazy(() => import("./pages/Privacy"));
 const Properties = lazy(() => import("./pages/Properties"));
 const SignIn = lazy(() => import("./pages/SignIn"));
 const SignUp = lazy(() => import("./pages/SignUp"));
@@ -29,14 +33,28 @@ const Team = lazy(() => import("./pages/Team"));
 // Property-management + services surfaces (docs/PLAN_PMS_SERVICES.md).
 const Manage = lazy(() => import("./pages/Manage"));
 const ManageProperty = lazy(() => import("./pages/ManageProperty"));
+const HotelManager = lazy(() => import("./pages/HotelManager"));
+const HotelPage = lazy(() => import("./pages/HotelPage"));
+const ManageHotels = lazy(() => import("./pages/ManageHotels"));
+const EditHotel = lazy(() => import("./pages/EditHotel"));
+const StaffManager = lazy(() => import("./pages/StaffManager"));
+const PayrollPage = lazy(() => import("./pages/PayrollPage"));
 const Services = lazy(() => import("./pages/Services"));
 const AdminServices = lazy(() => import("./pages/AdminServices"));
 const AgencyProfile = lazy(() => import("./pages/AgencyProfile"));
+const JoinHotel = lazy(() => import("./pages/JoinHotel"));
 
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      // The default staleTime of 0 refetches on every mount AND every window
+      // focus, so each navigation re-pulled the whole property list with its
+      // joined property_images, and every return to the PWA did it again. On
+      // the connections our renters actually have, that is the single most
+      // expensive thing the app does. Listings do not change minute to minute.
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
       // Never retry auth/permission failures. A 401 means the JWT was rejected
       // and a 403 means RLS said no — neither changes by asking again, and
       // retrying turns one rejected request into four identical ones.
@@ -55,10 +73,21 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        {/* Inside the router (needs useLocation) and outside the boundary, so a
+            crashed page still reports the route it happened on. */}
+        <AnalyticsBridge />
+        {/* Claims any hotel-team invitations addressed to this user's email,
+            once per session. Renders nothing; lives here rather than on a page
+            so an invitee lands on their hotel wherever they happen to sign in. */}
+        <AcceptInvitesOnSignIn />
+        {/* Inside the router so the fallback's "Go home" and any future
+            navigation have a router context to work with. */}
+        <ErrorBoundary>
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div>}>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/about" element={<About />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/properties" element={<Properties />} />
             {/* Splat routes are required: Clerk's path-based routing renders its
                 own sub-paths (/signin/factor-one, /signup/sso-callback,
@@ -69,8 +98,12 @@ const App = () => (
             <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/add-property" element={<ProtectedRoute allowedRoles={['owner', 'agent']}><AddProperty /></ProtectedRoute>} />
+            <Route path="/add-property" element={<ProtectedRoute allowedRoles={['owner', 'agent', 'hotel_manager']}><AddProperty /></ProtectedRoute>} />
             <Route path="/property/:id" element={<PropertyDetail />} />
+            {/* Hotel team invite. Deliberately public: the token in the URL is
+                the credential, and the page itself routes a signed-out visitor
+                through sign-in and back rather than burning the invite. */}
+            <Route path="/join/:token" element={<JoinHotel />} />
             <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['owner', 'agent', 'hotel_manager']}><Dashboard /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProfileSettings /></ProtectedRoute>} />
             <Route path="/saved" element={<ProtectedRoute><Saved /></ProtectedRoute>} />
@@ -90,17 +123,43 @@ const App = () => (
                 `org matches` OR `owns_property(...)`, so a signed-in user with
                 neither sees an empty dashboard and nothing else. Mutating
                 actions stay gated inside the pages. */}
-            <Route path="/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
+                        <Route path="/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
             <Route path="/manage/property/:id" element={<ProtectedRoute><ManageProperty /></ProtectedRoute>} />
+            {/* Front-desk hotel board (20260807000001) — bookings, housekeeping,
+                            today's arrivals/departures across the managed hotel rooms.
+
+                Hotel web pages (20260808000001) — the hotelier's page builder.
+
+                NOT gated on allowedRoles, on purpose, same reasoning as the block
+                above: hotel_managed() in the DB grants access to more than
+                platform-role hotel_manager — org:admin/manager/agent staff, and
+                per-hotel `hotel_members` (hotel_admin/hotel_editor, 20260810000002)
+                invited onto a single hotel without ever holding the platform role
+                themselves. An allowedRoles router gate is stricter than that and
+                silently locks out every one of them before they ever reach the
+                page. The "agency can't create a hotel" rule lives where it
+                belongs — at CREATION time, in AddProperty's account-type filter
+                and the properties/hotels INSERT triggers in
+                20260812000002_account_type_separation.sql — not here. Someone
+                with no route into a hotel simply finds an empty portfolio, same
+                as every other /manage/* page. */}
+                        <Route path="/manage/hotel" element={<ProtectedRoute><HotelManager /></ProtectedRoute>} />
+                                                <Route path="/manage/hotels" element={<ProtectedRoute><ManageHotels /></ProtectedRoute>} />
+                                                <Route path="/manage/hotels/:id" element={<ProtectedRoute><EditHotel /></ProtectedRoute>} />
+                                                {/* Team + payroll (20260810000001) — the operator's staff and pay runs. */}
+                                                <Route path="/manage/staff" element={<ProtectedRoute><StaffManager /></ProtectedRoute>} />
+                                                <Route path="/manage/payroll" element={<ProtectedRoute><PayrollPage /></ProtectedRoute>} />
 
             {/* Public services catalog + agency/hotel profiles. */}
-            <Route path="/services" element={<Services />} />
-            <Route path="/agency/:orgId" element={<AgencyProfile />} />
-            <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['admin' as UserRole]}><AdminServices /></ProtectedRoute>} />
-            {/* HotelProfile routes removed */}
+              <Route path="/services" element={<Services />} />
+              <Route path="/agency/:orgId" element={<AgencyProfile />} />
+              {/* Each hotel's public, customizable web page (20260808000001). */}
+              <Route path="/hotels/:slug" element={<HotelPage />} />
+              <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['admin' as UserRole]}><AdminServices /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
+        </ErrorBoundary>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

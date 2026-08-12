@@ -25,9 +25,19 @@ const roleInfo: Record<string, { label: string; icon: React.ElementType; color: 
   agent: { label: "Real Estate Agent", icon: ShieldCheck, color: "bg-primary/10 text-primary" },
 };
 
-const upgradeOptions: { value: UserRole; label: string; desc: string }[] = [
-  { value: "owner", label: "Property Owner", desc: "List and rent out your properties" },
-  { value: "hotel_manager", label: "Hotel Manager", desc: "Manage hotel room listings" },
+/**
+ * Every self-service account TYPE, keyed by role. `agent` is included even
+ * though it's an option at signup (CompleteProfile) — until this list existed
+ * it had no route back once picked, and neither did switching between the
+ * other two. This is also the ONLY way an agency and a hotel account can
+ * change sides of the split enforced in 20260812000002_account_type_separation.sql
+ * — that migration blocks creating the wrong kind of listing, so the escape
+ * hatch has to live here, not just at signup.
+ */
+const ROLE_TARGETS: { value: UserRole; label: string; desc: string }[] = [
+  { value: "owner", label: "Property Owner", desc: "List and rent out houses, apartments or commercial space" },
+  { value: "agent", label: "Real Estate Agency", desc: "Run an agency listing houses, apartments or commercial space" },
+  { value: "hotel_manager", label: "Hotel Manager", desc: "Run a hotel: rooms, bookings and your own hotel page" },
 ];
 
 const ProfileSettings = () => {
@@ -148,7 +158,12 @@ const ProfileSettings = () => {
 
   const initials = fullName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
   const role = roleInfo[currentRole] || roleInfo.user;
-  const canUpgrade = currentRole === "user";
+  // Admin/semi_admin are platform roles, not a business type — nothing to
+  // switch between. Everyone else (including someone who already picked a
+  // type) can move to a DIFFERENT one; they just can't re-pick the one they're
+  // already on.
+  const canUpgrade = ["user", "owner", "agent", "hotel_manager"].includes(currentRole);
+  const upgradeOptions = ROLE_TARGETS.filter((opt) => opt.value !== currentRole);
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -230,10 +245,12 @@ const ProfileSettings = () => {
                 <Card className="border-accent/20 bg-accent/5">
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <ArrowUpCircle className="w-5 h-5 text-accent" /> Upgrade Your Role
+                      <ArrowUpCircle className="w-5 h-5 text-accent" /> {currentRole === "user" ? "Upgrade Your Role" : "Switch Account Type"}
                     </CardTitle>
                     <CardDescription>
-                      Want to list properties? Upgrade from Renter to start earning.
+                      {currentRole === "user"
+                        ? "Want to list properties? Upgrade from Renter to start earning."
+                        : "Switch account type — your existing listings stay exactly as they are."}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">

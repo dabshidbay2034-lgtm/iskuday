@@ -5,7 +5,8 @@
       "name": "the-renta-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 8081
+      "port": 8080,
+      "autoPort": false
     }
   ]
 }

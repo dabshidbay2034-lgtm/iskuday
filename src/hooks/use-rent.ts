@@ -64,6 +64,8 @@ export type ManagedProperty = {
   orgId: string | null;
   /** Clerk id of the individual owner. Drives the no-agency path. */
   ownerId: string | null;
+  /** Creation timestamp, kept so the portfolio can be ordered newest-first. */
+  createdAt: string | null;
 };
 
 export type RentLedgerRow = {
@@ -221,6 +223,7 @@ type RawProperty = {
   is_daily_rate?: boolean | null;
   org_id?: string | null;
   owner_id?: string | null;
+  created_at?: string | null;
 };
 
 function toManagedProperty(row: RawProperty): ManagedProperty {
@@ -239,6 +242,7 @@ function toManagedProperty(row: RawProperty): ManagedProperty {
     isDailyRate: Boolean(row.is_daily_rate),
     orgId: row.org_id ?? null,
     ownerId: row.owner_id ?? null,
+    createdAt: row.created_at ?? null,
   };
 }
 
@@ -348,6 +352,20 @@ export type PropertyAccess = {
   canMarkRentPaid: boolean;
   canRecordUtilities: boolean;
   canSetOccupancy: boolean;
+  /** Log/record expenses (maintenance, repairs, supplies) — agents + staff. */
+  canRecordExpenses: boolean;
+  /** Log and update maintenance work orders — agents + staff. */
+  canManageMaintenance: boolean;
+  /** Upload/edit lease documents — managers inside an agency, or assigned staff. */
+  canManageLeases: boolean;
+    /** Read the new maintenance/expenses/lease surfaces at all. */
+  canViewMaintenance: boolean;
+  canViewExpenses: boolean;
+  canViewLeases: boolean;
+  /** Read reservations for a hotel room (20260807000001). */
+  canViewBookings: boolean;
+  /** Create/update/check-in/check-out/cancel bookings (+ housekeeping). */
+  canManageBookings: boolean;
 };
 
 /**
@@ -377,26 +395,69 @@ export function usePropertyAccess(property?: ManagedProperty | null): PropertyAc
   );
 
   return {
-    isSoloOwner,
-    canMarkRentPaid: isSoloOwner || can(PERMISSIONS.RENT_MARK_PAID),
-    canRecordUtilities: isSoloOwner || can(PERMISSIONS.UTILITIES_RECORD),
-    canSetOccupancy: isSoloOwner || can(PERMISSIONS.PROPERTY_OCCUPANCY),
+      isSoloOwner,
+      canMarkRentPaid: isSoloOwner || can(PERMISSIONS.RENT_MARK_PAID),
+      canRecordUtilities: isSoloOwner || can(PERMISSIONS.UTILITIES_RECORD),
+      canSetOccupancy: isSoloOwner || can(PERMISSIONS.PROPERTY_OCCUPANCY),
+      canRecordExpenses: isSoloOwner || can(PERMISSIONS.EXPENSES_RECORD),
+      canManageMaintenance: isSoloOwner || can(PERMISSIONS.MAINTENANCE_MANAGE),
+      canManageLeases: isSoloOwner || can(PERMISSIONS.LEASE_MANAGE),
+      canViewMaintenance: isSoloOwner || can(PERMISSIONS.MAINTENANCE_VIEW),
+      canViewExpenses: isSoloOwner || can(PERMISSIONS.EXPENSES_VIEW),
+      canViewLeases: isSoloOwner || can(PERMISSIONS.LEASE_VIEW),
+      canViewBookings: isSoloOwner || can(PERMISSIONS.BOOKING_VIEW),
+      canManageBookings: isSoloOwner || can(PERMISSIONS.BOOKING_MANAGE),
   };
 }
 
-// ── Queries ──────────────────────────────────────────────────────────────────
+  // ── Queries ──────────────────────────────────────────────────────────────────
+
+/**
+ * The property ids this user is explicitly assigned to via `property_staff`
+ * (20260806000001). A per-property staff member — often a caretaker with no
+ * Clerk organisation — reaches exactly the unit(s) they are assigned to, and
+ * only those.
+ *
+ * The RLS on property_staff lets a member read their own rows even with no
+ * organisation, so this query works for standalone staff too.
+ */
+export function useAssignedPropertyIds() {
+  const scope = useManageScope();
+
+  return useQuery({
+    queryKey: ["manage", "assigned-properties", scope.key],
+    enabled: scope.ready,
+    queryFn: async (): Promise<string[]> => {
+          // `property_staff` is added by the 20260806000001 migration and isn't in
+          // the generated types until `supabase gen types` runs, so this one query
+          // goes through a loose accessor.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const loose = pmsDb as unknown as { from: (t: string) => any };
+          const { data, error } = await loose
+            .from("property_staff")
+            .select("property_id")
+            .eq("user_id", scope.userId);
+          if (error) throw error;
+          return (data ?? []).map((r) => r.property_id).filter(Boolean);
+        },
+      });
+}
 
 /**
  * The portfolio: every unit belonging to the active agency, plus every unit the
- * signed-in user owns personally. Newest first.
+ * signed-in user owns personally, plus every unit they are explicitly assigned
+ * to manage via property_staff. Newest first.
  */
 export function useOrgProperties() {
   const scope = useManageScope();
+  const assigned = useAssignedPropertyIds();
 
   const query = useQuery({
-    queryKey: ["manage", "properties", scope.key],
-    enabled: scope.ready,
-    queryFn: async (): Promise<ManagedProperty[]> => {
+      queryKey: ["manage", "properties", scope.key, "assigned", assigned.data ?? []],
+      enabled: Boolean(scope.ready && (assigned.isSuccess || assigned.isError)),
+      queryFn: async (): Promise<ManagedProperty[]> => {
+        const assignedIds = assigned.data ?? [];
+
       const base = pmsDb.from("properties").select("*");
       const scoped = scope.orgId
         ? base.or(`org_id.eq.${scope.orgId},owner_id.eq.${scope.userId}`)
@@ -404,7 +465,32 @@ export function useOrgProperties() {
 
       const { data, error } = await scoped.order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map(toManagedProperty);
+      const main = data ?? [];
+
+      // Assigned units that aren't already included (e.g. a standalone staff
+      // member who is neither an org member nor the owner) come through here.
+      const known = new Set(main.map((p) => p.id));
+      const extra = assignedIds.filter((id) => !known.has(id));
+      let extras: RawProperty[] = [];
+      if (extra.length > 0) {
+        const { data: extraRows, error: extraError } = await pmsDb
+          .from("properties")
+          .select("*")
+          .in("id", extra);
+        if (extraError) throw extraError;
+        extras = extraRows ?? [];
+      }
+
+      const merged = [...main, ...extras].map(toManagedProperty);
+      const byId = new Map(merged.map((p) => [p.id, p]));
+      // Newest first, by creation time. Sorting by `id` instead — as this did —
+      // threw away the `order("created_at")` above and shuffled the portfolio
+      // into an arbitrary order, because the ids are random v4 UUIDs and carry
+      // no chronology. Rows with no timestamp sort last rather than jumping to
+      // the top.
+      return [...byId.values()].sort((a, b) =>
+        (b.createdAt ?? "").localeCompare(a.createdAt ?? ""),
+      );
     },
   });
 
@@ -419,19 +505,34 @@ export function useOrgProperties() {
  */
 export function useManagedProperty(propertyId?: string) {
   const scope = useManageScope();
+  const assigned = useAssignedPropertyIds();
 
   const query = useQuery({
-    queryKey: ["manage", "property", propertyId, scope.key],
-    enabled: Boolean(scope.ready && propertyId),
+    queryKey: ["manage", "property", propertyId, scope.key, "assigned", assigned.data ?? []],
+        enabled: Boolean(propertyId && scope.ready && (assigned.isSuccess || assigned.isError)),
     queryFn: async (): Promise<ManagedProperty | null> => {
-      const base = pmsDb.from("properties").select("*").eq("id", propertyId);
-      const scoped = scope.orgId
-        ? base.or(`org_id.eq.${scope.orgId},owner_id.eq.${scope.userId}`)
-        : base.eq("owner_id", scope.userId);
-
-      const { data, error } = await scoped.maybeSingle();
+      const { data, error } = await pmsDb
+        .from("properties")
+        .select("*")
+        .eq("id", propertyId)
+        .maybeSingle();
       if (error) throw error;
-      return data ? toManagedProperty(data) : null;
+      if (!data) return null;
+
+      const row = data as RawProperty;
+      const assignedIds = assigned.data ?? [];
+      const isOwn = row.owner_id == null
+        ? false
+        : row.owner_id === scope.userId;
+      const isOrg = Boolean(scope.orgId && row.org_id === scope.orgId);
+      const isAssigned = assignedIds.includes(propertyId);
+
+      // A property only comes back under management when the caller has a
+      // legitimate path to it: agency unit, their own unit, or explicit
+      // per-property assignment. A stranger's id resolves to "not found".
+      if (!isOwn && !isOrg && !isAssigned) return null;
+
+      return toManagedProperty(row);
     },
   });
 

@@ -175,4 +175,22 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  /* BottomNav has always asked for this class; nothing ever defined it, so
+     Tailwind emitted nothing and the fixed nav sat under the iPhone home
+     indicator. env() only resolves to a non-zero value when the document opts
+     in with viewport-fit=cover — see the viewport meta in index.html. */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Clerk's "Secured by Clerk" badge and "Development mode" pill share one
+   footer block with no stable, non-hashed class name of their own — unlike
+   the "Don't have an account? Sign up" link, which Clerk does expose as
+   .cl-footerAction and which this rule leaves alone. Targeted structurally,
+   as the sibling that renders after .cl-footerAction inside .cl-footer,
+   since that's the only handle Clerk's DOM gives us for it. Kept outside
+   @layer utilities so it isn't subject to Tailwind's layer ordering. */
+.cl-footerAction ~ div {
+  display: none !important;
 }

@@ -7,6 +7,15 @@ interface ImageGalleryProps {
   title: string;
 }
 
+/**
+ * Spread onto the first slide only. The camelCase `fetchPriority` prop that
+ * @types/react advertises is a React 19 feature — React 18's DOM does not know
+ * it, forwards it verbatim and logs an unknown-prop warning on every render.
+ * The lowercase attribute is what the browser actually reads, and a spread is
+ * the only way to hand it over without the types rejecting it.
+ */
+const LCP_PRIORITY = { fetchpriority: "high" } as React.ImgHTMLAttributes<HTMLImageElement>;
+
 const ImageGallery = ({ images, title }: ImageGalleryProps) => {
   const displayImages = images.length > 0 ? images : ["/placeholder.svg"];
   const [current, setCurrent] = useState(0);
@@ -47,11 +56,22 @@ const ImageGallery = ({ images, title }: ImageGalleryProps) => {
               key={i}
               className="flex-[0_0_100%] min-w-0 aspect-[4/3] md:aspect-[2.5/1]"
             >
+              {/* Only the first slide is on screen at load — it is the LCP, so
+                  it stays eager and gets priority. Every other slide used to
+                  download eagerly too, which on a 17-photo listing meant the
+                  whole gallery came down before the page settled. No width/
+                  height attributes: the slide wrapper already reserves the box
+                  via its aspect-[4/3] class, and the image is stretched to fill
+                  it, so any intrinsic pair we wrote here would be a guess CSS
+                  immediately overrides. */}
               <img
                 src={src}
                 alt={`${title} - photo ${i + 1}`}
                 className="w-full h-full object-cover"
                 draggable={false}
+                loading={i === 0 ? "eager" : "lazy"}
+                decoding="async"
+                {...(i === 0 ? LCP_PRIORITY : {})}
               />
             </div>
           ))}
@@ -116,7 +136,17 @@ const ImageGallery = ({ images, title }: ImageGalleryProps) => {
                   : "border-transparent opacity-60 hover:opacity-100"
               }`}
             >
-              <img src={src} alt="" className="w-full h-full object-cover" />
+              {/* Desktop-only strip below the fold; the w-16 h-12 box gives us
+                  real intrinsic dimensions to hand the browser. */}
+              <img
+                src={src}
+                alt=""
+                className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
+                width={64}
+                height={48}
+              />
             </button>
           ))}
         </div>

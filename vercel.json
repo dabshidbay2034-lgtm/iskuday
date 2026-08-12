@@ -1,5 +1,13 @@
 {
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "www.mogadishurents.com" }],
+      "destination": "https://mogadishurents.com/$1",
+      "permanent": false
+    }
   ]
 }

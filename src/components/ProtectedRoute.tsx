@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAppAuth } from '@/hooks/use-auth';
@@ -27,11 +27,18 @@ const ProtectedRoute = ({ children, allowedRoles, requirePermission, requireOrg 
 
   // A single source of truth for the verdict, so the redirect effect and the
   // render path can never disagree about whether access is allowed.
-  let denial: { toast: string; detail: Record<string, unknown> } | null = null;
+  //
+  // Memoised deliberately: this object is a dependency of the redirect effect
+  // below, and a fresh literal on every render re-ran that effect on every
+  // render, firing a duplicate toast each time. `allowedRoles` is keyed by its
+  // contents rather than its identity because callers pass an inline array
+  // literal, which is a new reference on each parent render.
+  const allowedRolesKey = allowedRoles?.join(',');
+  const denial = useMemo<{ toast: string; detail: Record<string, unknown> } | null>(() => {
+    if (!isLoaded || !isSignedIn) return null;
 
-  if (isLoaded && isSignedIn) {
     if (allowedRoles && (!platformRole || !allowedRoles.includes(platformRole))) {
-      denial = {
+      return {
         toast:
           platformRole == null
             ? 'Your account has no role yet. Finish setting up your profile first.'
@@ -42,33 +49,39 @@ const ProtectedRoute = ({ children, allowedRoles, requirePermission, requireOrg 
           youHave: platformRole,
         },
       };
-    } else if (requireOrg && !organization) {
-      denial = {
+    }
+    if (requireOrg && !organization) {
+      return {
         toast: 'Create or select an agency to open that page.',
         detail: { reason: 'no-active-organization' },
       };
-    } else if (requirePermission && !can(requirePermission)) {
-      denial = {
+    }
+    if (requirePermission && !can(requirePermission)) {
+      return {
         toast: "Your role in this agency doesn't allow that.",
         detail: { reason: 'missing-permission', needs: requirePermission, platformRole },
       };
     }
-  }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn, allowedRolesKey, platformRole, requireOrg, organization, requirePermission, can]);
 
   useEffect(() => {
     if (!isLoaded) return;
 
+    // `replace` on both redirects: pushing would leave the guarded path in
+    // history, so Back returns to it, the guard bounces forward again, and the
+    // user is trapped on the destination with no way out.
     if (!isSignedIn) {
-      navigate('/signin');
+      navigate('/signin', { replace: true });
       return;
     }
 
     if (denial) {
       console.warn('[ProtectedRoute] access denied', denial.detail);
       toast.error(denial.toast);
-      navigate('/');
+      navigate('/', { replace: true });
     }
-    // `denial` is derived from these; listing them keeps the effect honest.
   }, [isLoaded, isSignedIn, denial, navigate]);
 
   if (!isLoaded) {

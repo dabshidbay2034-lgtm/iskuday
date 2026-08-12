@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Bed, Bath, Car, Cctv, Building2, MapPin, Heart, Armchair, Building } from "lucide-react";
 import { toast } from "sonner";
 import type { Property } from "@/lib/types";
+import { propertyTypeClass, propertyTypeLabel } from "@/lib/property-display";
 
 interface PropertyCardProps {
   property: Property;
@@ -14,18 +15,6 @@ interface PropertyCardProps {
 
 const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthenticated }: PropertyCardProps) => {
   const navigate = useNavigate();
-  const typeColors: Record<string, string> = {
-    villa: "bg-success text-success-foreground",
-    apartment: "bg-info text-info-foreground",
-    hotel: "bg-hotel text-hotel-foreground",
-    commercial: "bg-warning text-warning-foreground",
-  };
-  const typeLabels: Record<string, string> = {
-    villa: "House",
-    apartment: "Apartment",
-    hotel: "Hotel",
-    commercial: "Commercial",
-  };
 
   const handleFavorite = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -62,8 +51,11 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
         <div className="absolute inset-0 bg-gradient-to-t from-foreground/25 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-          <Badge className={`${typeColors[property.type]} border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm`}>
-            {typeLabels[property.type] || property.type}
+          {/* Callers disagree on the spelling: the list pages remap the enum to
+              "house" before rendering, Saved passes the raw "villa" through.
+              The helper folds both, so neither can miss the lookup. */}
+          <Badge className={`${propertyTypeClass(property.type)} border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm`}>
+            {propertyTypeLabel(property.type)}
           </Badge>
           {property.is_furnished && (
             <Badge className="bg-card/90 backdrop-blur-sm text-foreground border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm flex items-center gap-1">

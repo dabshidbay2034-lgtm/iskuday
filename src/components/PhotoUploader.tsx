@@ -50,7 +50,11 @@ const PhotoUploader = ({ photos, setPhotos, maxPhotos }: PhotoUploaderProps) => 
             accept="image/*"
             multiple
             className="hidden"
-            onChange={(e) => handleFiles(e.target.files)}
+            // Clearing the input is what lets the SAME file be picked again.
+            // The browser fires no change event when the selection is identical
+            // to the last one, so removing a photo and re-choosing it did
+            // nothing at all. (Mirrors hotel/SectionFields.tsx.)
+            onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
           />
         </label>
       )}
@@ -70,9 +74,16 @@ const PhotoUploader = ({ photos, setPhotos, maxPhotos }: PhotoUploaderProps) => 
                   Cover
                 </span>
               )}
+              {/* Always visible on touch, hover-revealed from md up. Phones have
+                  no hover, so the old opacity-0 left an owner mid-wizard with no
+                  way to drop a photo they picked by mistake — and this uploader
+                  takes up to 35 of them. type="button" because the uploader sits
+                  inside the listing form and a bare <button> submits it. */}
               <button
+                type="button"
                 onClick={() => removePhoto(i)}
-                className="absolute top-1.5 right-1.5 w-6 h-6 bg-foreground/70 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label={`Remove photo ${i + 1}`}
+                className="absolute top-1.5 right-1.5 w-6 h-6 bg-foreground/70 rounded-full flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
               >
                 <X className="w-3 h-3 text-background" />
               </button>

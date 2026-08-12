@@ -36,38 +36,56 @@ interface RawPropertyRecord {
   property_images?: Array<{ image_url: string; sort_order?: number }>;
 }
 
+/**
+ * `:orgId` is raw URL input that gets interpolated into PostgREST `.or()` filter
+ * strings below, where a comma, parenthesis or dot is grammar rather than data —
+ * so a crafted id could rewrite the filter it lands in. Clerk org ids and UUIDs
+ * are both covered by this character set; anything else is not a real id and is
+ * rejected before it reaches a query.
+ */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
 const AgencyProfile = () => {
   const { orgId } = useParams<{ orgId: string }>();
   const navigate = useNavigate();
 
+  const safeOrgId = orgId && SAFE_ID.test(orgId) ? orgId : null;
+
   // Fetch agency or owner profile info
   const { data: profile } = useQuery({
-    queryKey: ["agency-profile", orgId],
-    enabled: Boolean(orgId),
+    queryKey: ["agency-profile", safeOrgId],
+    enabled: Boolean(safeOrgId),
     queryFn: async () => {
-      if (!orgId) return null;
-      // Search by user_id or org_id
-      const { data } = await supabase
+      if (!safeOrgId) return null;
+      // This route serves both an agency (`org_…`, matching profiles.org_id) and
+      // a solo owner (their user id, matching profiles.user_id), so both columns
+      // have to be searched — matching only user_id left every agency falling
+      // back to the generic "Real Estate Agency" placeholder.
+      //
+      // Not `.maybeSingle()`: an org has one profile row per member, and
+      // maybeSingle throws on multiple rows instead of returning one.
+      const { data, error } = await supabase
         .from("profiles")
         .select("full_name, avatar_url")
-        .or(`user_id.eq.${orgId}`)
-        .maybeSingle();
+        .or(`user_id.eq.${safeOrgId},org_id.eq.${safeOrgId}`)
+        .limit(1);
 
-      return data;
+      if (error) throw error;
+      return data?.[0] ?? null;
     },
   });
 
   // Fetch properties belonging to this agency/orgId
   const { data: rawProperties, isLoading } = useQuery({
-    queryKey: ["agency-properties", orgId],
-    enabled: Boolean(orgId),
+    queryKey: ["agency-properties", safeOrgId],
+    enabled: Boolean(safeOrgId),
     queryFn: async () => {
-      if (!orgId) return [];
+      if (!safeOrgId) return [];
 
       const query = supabase
         .from("properties")
         .select("*, property_images(image_url, sort_order)")
-        .or(`org_id.eq.${orgId},owner_id.eq.${orgId}`);
+        .or(`org_id.eq.${safeOrgId},owner_id.eq.${safeOrgId}`);
 
       const { data, error } = await query;
       if (error) throw error;

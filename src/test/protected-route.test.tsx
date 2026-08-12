@@ -67,7 +67,7 @@ describe('ProtectedRoute', () => {
     renderGuard();
 
     expect(shown()).toBe(false);
-    expect(navigate).toHaveBeenCalledWith('/signin');
+    expect(navigate).toHaveBeenCalledWith('/signin', { replace: true });
   });
 
   it('renders children for any signed-in user when no role is required', () => {
@@ -95,7 +95,7 @@ describe('ProtectedRoute', () => {
     renderGuard({ allowedRoles: allowed });
 
     expect(shown()).toBe(expected);
-    if (!expected) expect(navigate).toHaveBeenCalledWith('/');
+    if (!expected) expect(navigate).toHaveBeenCalledWith('/', { replace: true });
   });
 
   it('blocks a user with no platform role at all from a role-gated route', () => {
@@ -103,7 +103,7 @@ describe('ProtectedRoute', () => {
     renderGuard({ allowedRoles: ['owner'] });
 
     expect(shown()).toBe(false);
-    expect(navigate).toHaveBeenCalledWith('/');
+    expect(navigate).toHaveBeenCalledWith('/', { replace: true });
   });
 
   // Regression: user_id is now UNIQUE on user_roles (one role per user), so a
@@ -143,7 +143,7 @@ describe('ProtectedRoute', () => {
     renderGuard({ requireOrg: true });
 
     expect(shown()).toBe(false);
-    expect(navigate).toHaveBeenCalledWith('/');
+    expect(navigate).toHaveBeenCalledWith('/', { replace: true });
   });
 
   it('admits a user who has an active organization', () => {
@@ -160,7 +160,7 @@ describe('ProtectedRoute', () => {
     renderGuard({ requireOrg: true, requirePermission: PERMISSIONS.STAFF_MANAGE });
 
     expect(shown()).toBe(false);
-    expect(navigate).toHaveBeenCalledWith('/');
+    expect(navigate).toHaveBeenCalledWith('/', { replace: true });
   });
 
   it('admits org members holding the required permission', () => {

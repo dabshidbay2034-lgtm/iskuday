@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 
 export const useFavorites = () => {
   const queryClient = useQueryClient();
@@ -36,8 +37,12 @@ export const useFavorites = () => {
           .insert({ user_id: userId, property_id: propertyId });
         if (error) throw error;
       }
+      // Returned so onSuccess can report which direction the toggle went —
+      // saves and un-saves mean opposite things and shouldn't share one number.
+      return { propertyId, saved: !isFav };
     },
-    onSuccess: () => {
+    onSuccess: ({ propertyId, saved }) => {
+      track(ANALYTICS_EVENTS.FAVORITE_TOGGLED, { property_id: propertyId, saved });
       queryClient.invalidateQueries({ queryKey: ["favorites", userId] });
     },
   });

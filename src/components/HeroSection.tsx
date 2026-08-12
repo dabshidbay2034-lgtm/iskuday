@@ -7,6 +7,7 @@ import {
 import { Search, MapPin, Home, SlidersHorizontal } from "lucide-react";
 import { motion } from "framer-motion";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 
 const heroBg = "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1920&q=85";
 
@@ -39,6 +40,15 @@ const HeroSection = () => {
       if (min) params.set("minPrice", min);
       if (max) params.set("maxPrice", max);
     }
+
+    // What people search for is the clearest signal of demand we have —
+    // especially districts and budgets that return nothing.
+    track(ANALYTICS_EVENTS.PROPERTY_SEARCH_SUBMITTED, {
+      district: selectedDistrict || null,
+      type: selectedType || null,
+      price_range: selectedPrice || null,
+    });
+
     navigate(`/properties${params.toString() ? `?${params}` : ""}`);
   };
 
@@ -75,8 +85,13 @@ const HeroSection = () => {
             <div className="flex-1 flex flex-col md:flex-row md:items-stretch divide-y md:divide-y-0 md:divide-x divide-border/70">
               <div className="flex-1 px-4 py-2.5 md:rounded-l-full hover:bg-muted transition-colors rounded-2xl md:rounded-none">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-foreground mb-0.5">Where</p>
+                {/* h-11, not h-7: these three are the site's primary conversion
+                    control and a 28px target is well under the 44px minimum.
+                    The "Where"/"Property type"/"Budget" captions above are <p>,
+                    not <label>, so without aria-label a screen reader announces
+                    three unnamed comboboxes. */}
                 <Select value={selectedDistrict} onValueChange={setSelectedDistrict}>
-                  <SelectTrigger className="h-7 border-0 bg-transparent shadow-none p-0 rounded-none [&>svg]:hidden">
+                  <SelectTrigger aria-label="Where — district" className="h-11 border-0 bg-transparent shadow-none p-0 rounded-none [&>svg]:hidden">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                       <SelectValue placeholder="Search districts" />
@@ -94,7 +109,7 @@ const HeroSection = () => {
               <div className="flex-1 px-4 py-2.5 hover:bg-muted transition-colors rounded-2xl md:rounded-none">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-foreground mb-0.5">Property type</p>
                 <Select value={selectedType} onValueChange={setSelectedType}>
-                  <SelectTrigger className="h-7 border-0 bg-transparent shadow-none p-0 rounded-none [&>svg]:hidden">
+                  <SelectTrigger aria-label="Property type" className="h-11 border-0 bg-transparent shadow-none p-0 rounded-none [&>svg]:hidden">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Home className="w-3.5 h-3.5 text-primary shrink-0" />
                       <SelectValue placeholder="Any type" />
@@ -112,7 +127,7 @@ const HeroSection = () => {
               <div className="flex-1 px-4 py-2.5 hover:bg-muted transition-colors rounded-2xl md:rounded-r-full md:rounded-l-none">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-foreground mb-0.5">Budget</p>
                 <Select value={selectedPrice} onValueChange={setSelectedPrice}>
-                  <SelectTrigger className="h-7 border-0 bg-transparent shadow-none p-0 rounded-none [&>svg]:hidden">
+                  <SelectTrigger aria-label="Budget" className="h-11 border-0 bg-transparent shadow-none p-0 rounded-none [&>svg]:hidden">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <SlidersHorizontal className="w-3.5 h-3.5 text-primary shrink-0" />
                       <SelectValue placeholder="Any budget" />

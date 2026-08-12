@@ -78,6 +78,9 @@ const Header = () => {
           {canManageProperties && (
             <Link to="/manage" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Manage</Link>
           )}
+          {Boolean(orgId) && (
+            <Link to="/team" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Team</Link>
+          )}
         </nav>
 
         <div className="hidden lg:flex items-center gap-2">
@@ -182,6 +185,9 @@ const Header = () => {
               <Link to="/services" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Services</Link>
               {canManageProperties && (
                 <Link to="/manage" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Manage Properties</Link>
+              )}
+              {Boolean(orgId) && (
+                <Link to="/team" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Team</Link>
               )}
 
               {/* Property Categories */}

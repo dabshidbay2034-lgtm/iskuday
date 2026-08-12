@@ -89,10 +89,18 @@ same migration.
 ```
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_CLERK_PUBLISHABLE_KEY=
+VITE_POSTHOG_KEY=          # optional — analytics is disabled without it
+VITE_POSTHOG_HOST=         # optional — defaults to https://us.i.posthog.com
 ```
 
 Only the publishable/anon key belongs in client code. Anything requiring a service-role key
 must live in a Supabase edge function under `supabase/functions/`.
+
+Analytics (PostHog) is **optional by design**: with no `VITE_POSTHOG_KEY`, `src/lib/analytics.ts`
+never initialises and every helper it exports is a no-op, so a fresh clone and CI both run
+without one. See `docs/POSTHOG_SETUP.md`. Never send contact details (phone, email) or message
+bodies to analytics — those live in `profile_contacts`, which is owner-readable only.
 
 ## Working agreements
 

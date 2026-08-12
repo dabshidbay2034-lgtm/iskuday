@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Building2, ChevronRight, Home, Plus } from "lucide-react";
+import { Link, Navigate } from "react-router-dom";
+import { BedDouble, Building2, ChevronRight, Globe, Home, Plus, Users, Wallet } from "lucide-react";
 
 import { useAppAuth } from "@/hooks/use-auth";
+import { useMyHotelIds } from "@/hooks/use-hotel-invites";
+import { canManageHotelPages } from "@/lib/account-type";
 import { PERMISSIONS } from "@/lib/permissions";
 import {
   buildPortfolioSummary,
@@ -60,15 +62,29 @@ type OccupancyFilter = "all" | OccupancyStatus;
  * in a horizontal scroll container.
  */
 const Manage = () => {
-  const { isLoaded, isSignedIn, can } = useAppAuth();
+  const { isLoaded, isSignedIn, can, platformRole } = useAppAuth();
   const scope = useManageScope();
   const properties = useOrgProperties();
   // The rent query is keyed on the portfolio's property ids, so it waits for the
   // properties to land rather than filtering on an org that may not exist.
   const rent = usePortfolioRent(properties.data);
+  // Every hotel the user can REACH, which is not the same as every hotel they
+  // own — a `hotel_members` invitee owns nothing at all.
+  const hotelIds = useMyHotelIds();
   const [filter, setFilter] = useState<OccupancyFilter>("all");
 
   const rows = useMemo(() => properties.data ?? [], [properties.data]);
+  /**
+   * Hotel surfaces need BOTH conditions.
+   *
+   * The role check is the new rule: a letting agency has no front desk. The
+   * rooms check is the old one, and it stays — an account that predates the
+   * split may still hold hotel rooms, and hiding the desk from someone who is
+   * actively letting rooms would be worse than the ambiguity being fixed. So a
+   * hotel account with no rooms yet sees nothing, and neither does an agency.
+   */
+  const hasHotelRooms = useMemo(() => rows.some((p) => p.type === "hotel"), [rows]);
+  const showHotelTools = hasHotelRooms && canManageHotelPages(platformRole);
   const ledger = useMemo(() => rent.data ?? [], [rent.data]);
 
   const summary = useMemo(() => buildPortfolioSummary(rows, ledger), [rows, ledger]);
@@ -79,9 +95,25 @@ const Manage = () => {
     [rows, filter],
   );
 
+  /**
+   * The one hotel to send an invited team member to.
+   *
+   * Only meaningful when the portfolio is empty: someone who owns units belongs
+   * on their portfolio even if they also sit on a hotel's team.
+   */
+  const soloHotelId = useMemo(() => {
+    const ids = hotelIds.data ?? [];
+    return ids.length === 1 ? ids[0] : null;
+  }, [hotelIds.data]);
+
   // A signed-in user always has a scope — their agency's units, or their own —
   // so this terminates for solo owners too.
-  const isPending = !isLoaded || !scope.ready || properties.isPending || rent.isPending;
+  const isPending =
+    !isLoaded || !scope.ready || properties.isPending || rent.isPending ||
+    // Wait on the hotel-id RPC ONLY when the portfolio came back empty. That is
+    // the single case whose answer changes what we render, and making everyone
+    // else wait for it would slow the common path down for nothing.
+    (properties.data?.length === 0 && hotelIds.isPending);
 
   // Route guards signed-out visitors; don't flash a dashboard at them.
   if (isLoaded && !isSignedIn) return null;
@@ -112,17 +144,57 @@ const Manage = () => {
     );
   }
 
+  /**
+   * An invited hotel team member has no properties of their own, so the empty
+   * "Add a property" state is a dead end for them — the one thing they can
+   * actually reach is the hotel they were invited to. Send them there.
+   *
+   * Exactly one hotel, deliberately: with several there is nothing to guess, and
+   * /manage/hotels lists them. No loop is possible — if that hotel then fails to
+   * load, EditHotel's not-found state points at /manage/hotels, never back here.
+   */
+  if (rows.length === 0 && soloHotelId) {
+    return <Navigate to={`/manage/hotels/${soloHotelId}`} replace />;
+  }
+
   // No "you need an agency" gate: a landlord who never created an organization
   // manages their own units here, and the queries are scoped to them (R1).
   return (
     <ManageShell>
-      <div>
-        <h1 className="font-heading font-bold text-xl md:text-2xl text-foreground">
-          {scope.isSoloScope ? "My properties" : "Portfolio"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Occupancy, rent and bills for {formatMonthLabel(currentMonthKey())}.
-        </p>
+            <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-heading font-bold text-xl md:text-2xl text-foreground">
+            {scope.isSoloScope ? "My properties" : "Portfolio"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Occupancy, rent and bills for {formatMonthLabel(currentMonthKey())}.
+          </p>
+        </div>
+        {showHotelTools && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to="/manage/hotels">
+                        <Globe className="w-4 h-4" /> <span className="hidden sm:inline">Hotel pages</span>
+                        <span className="sm:hidden">Pages</span>
+                      </Link>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                                          <Link to="/manage/hotel">
+                                            <BedDouble className="w-4 h-4" /> Hotel desk
+                                          </Link>
+                                        </Button>
+                                        <Button variant="outline" size="sm" asChild>
+                                          <Link to="/manage/staff">
+                                            <Users className="w-4 h-4" /> Staff
+                                          </Link>
+                                        </Button>
+                                        <Button variant="outline" size="sm" asChild>
+                                          <Link to="/manage/payroll">
+                                            <Wallet className="w-4 h-4" /> Payroll
+                                          </Link>
+                                        </Button>
+                                      </div>
+                                    )}
       </div>
 
       <PortfolioSummaryTiles summary={summary} />

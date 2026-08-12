@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSubmitServiceInquiry, type Service } from "@/hooks/use-services";
+import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import { Send, CheckCircle2, User, Mail, Phone, FileText } from "lucide-react";
 
 const inquirySchema = z.object({
@@ -68,6 +69,12 @@ export function ServiceInquiryDialog({ service, open, onOpenChange }: ServiceInq
       });
 
       setSubmitted(true);
+      // Service and id only — the name, email, phone and message the visitor
+      // just typed are contact details and stay out of analytics.
+      track(ANALYTICS_EVENTS.SERVICE_INQUIRY_SUBMITTED, {
+        service_id: service?.id,
+        service_title: service?.title,
+      });
       toast.success("Inquiry sent successfully! Our team will contact you soon.");
     } catch (err: unknown) {
       toast.error((err as Error)?.message || "Failed to send inquiry. Please try again.");
