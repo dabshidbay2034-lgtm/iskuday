@@ -44,20 +44,79 @@ It will ask for the database password (Project Settings → Database). This writ
 These are **server-side only**. None may ever get a `VITE_` prefix — that prefix is what
 puts a value into the browser bundle for anyone to read.
 
-```bash
-npx supabase secrets set \
-  SUPABASE_SERVICE_ROLE_KEY="..." \
-  CLERK_WEBHOOK_SECRET="whsec_..." \
-  RESEND_API_KEY="re_..." \
-  NOTIFY_WEBHOOK_SECRET="$(openssl rand -hex 32)" \
-  ADMIN_NOTIFY_EMAIL="you@mogadishurents.com" \
-  FROM_EMAIL="Mogadishu Rents <noreply@mogadishurents.com>" \
-  SITE_URL="https://mogadishurents.com"
+### Use an env file, not the command line
+
+Two reasons, and the second is the important one:
+
+1. `supabase secrets set A=1 B=2` on one line is fragile the moment a value contains a
+   character your shell treats specially. **On Windows the bash-style `\` line
+   continuation does not work at all** — PowerShell reads each line as its own command
+   and you get `The term 'SUPABASE_SERVICE_ROLE_KEY=...' is not recognized`.
+2. **PowerShell records your command history to disk in plain text**
+   (`$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`).
+   A service-role key pasted on the command line stays in that file. An env file does
+   not touch history.
+
+`supabase/.env.production` is already covered by `.gitignore` (`.env.*`) — confirm with
+`git check-ignore -v supabase/.env.production` before you put anything real in it.
+
+Create the file with this content, replacing every placeholder:
+
+```ini
+CLERK_WEBHOOK_SECRET=whsec_...
+RESEND_API_KEY=re_...
+NOTIFY_WEBHOOK_SECRET=<paste the value generated below>
+ADMIN_NOTIFY_EMAIL=you@mogadishurents.com
+FROM_EMAIL=Mogadishu Rents <noreply@mogadishurents.com>
+SITE_URL=https://mogadishurents.com
 ```
 
-Optional: `BOOTSTRAP_ADMIN_IDS="user_2abc,user_2def"` — comma-separated Clerk ids that
+> **Do not add `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`, or any other
+> `SUPABASE_*` name.** The CLI rejects them —
+> `Env name cannot start with SUPABASE_, skipping: …` — because the platform
+> **injects them into every edge function automatically at runtime**. Setting
+> them is unnecessary and the CLI blocks it so you cannot shadow the real ones
+> with a stale copy. Seeing that skip message is the expected outcome, not an
+> error.
+
+Do **not** wrap the values in quotes — the file is parsed as `NAME=VALUE`, so quotes
+become part of the value.
+
+Generate `NOTIFY_WEBHOOK_SECRET` (PowerShell). This uses the cryptographic RNG, not
+`Get-Random`, because it is an authentication secret:
+
+```powershell
+$b = [byte[]]::new(32); [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); ($b | ForEach-Object { '{0:x2}' -f $_ }) -join ''
+```
+
+Then push them all at once:
+
+```powershell
+npx supabase secrets set --env-file supabase/.env.production
+```
+
+Optional: add `BOOTSTRAP_ADMIN_IDS=user_2abc,user_2def` — comma-separated Clerk ids that
 get the `admin` role on first signup. This is the **only** supported route to your first
 platform admin; there is no in-app path (see `supabase/bootstrap_admin.sql`).
+
+Verify what landed (names only — values are never echoed back):
+
+```powershell
+npx supabase secrets list
+```
+
+> Keep the file after deploying, or delete it — either is fine. If you keep it, it is
+> your only local copy of `NOTIFY_WEBHOOK_SECRET`, which must match the
+> `app.notify_secret` you set in step 7.
+
+<details>
+<summary>macOS / Linux equivalent</summary>
+
+```bash
+NOTIFY_WEBHOOK_SECRET=$(openssl rand -hex 32)
+npx supabase secrets set --env-file supabase/.env.production
+```
+</details>
 
 ## 4. Deploy
 
@@ -68,6 +127,21 @@ npx supabase functions deploy clerk-webhook increment-view send-notification
 Then confirm they answer — a `404` means not deployed; `401`/`400` means deployed and
 correctly rejecting an unsigned request:
 
+```powershell
+foreach ($f in "clerk-webhook","increment-view","send-notification") {
+  $u = "https://hetaveowlxcjuxbtckqt.supabase.co/functions/v1/$f"
+  try   { $c = (Invoke-WebRequest -Uri $u -Method POST -Body '{}' -UseBasicParsing).StatusCode }
+  catch { $c = $_.Exception.Response.StatusCode.value__ }
+  "{0}: {1}" -f $f, $c
+}
+```
+
+A `404` here means the function is not deployed. `401` or `400` means it **is** deployed
+and correctly refusing an unsigned request — that is the result you want.
+
+<details>
+<summary>macOS / Linux equivalent</summary>
+
 ```bash
 for f in clerk-webhook increment-view send-notification; do
   printf "%s: " "$f"
@@ -75,6 +149,7 @@ for f in clerk-webhook increment-view send-notification; do
     "https://hetaveowlxcjuxbtckqt.supabase.co/functions/v1/$f" -d '{}'
 done
 ```
+</details>
 
 ## 5. Point Clerk at the webhook
 

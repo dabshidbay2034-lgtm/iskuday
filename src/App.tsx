@@ -10,6 +10,8 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import AnalyticsBridge from "@/components/AnalyticsBridge";
 import AcceptInvitesOnSignIn from "@/components/hotel/AcceptInvitesOnSignIn";
+import TenantRoutes from "@/components/hotel/TenantRoutes";
+import { resolveTenant } from "@/lib/tenant";
 
 // Lazy load pages for better performance
 const Index = lazy(() => import("./pages/Index"));
@@ -67,6 +69,19 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Which site are we? Resolved from the hostname ONCE, at module scope.
+ *
+ * `jazeera.mogadishurents.com` must serve that hotel's own website, not the
+ * marketplace with a hotel page inside it. The host cannot change without a
+ * full page load, so this never needs to be reactive — and resolving it here
+ * means the platform's routes are never even mounted on a tenant host.
+ *
+ * Locally there is no wildcard cert, so `resolveTenant` also honours
+ * `<sub>.localhost:8080` and `?__tenant=<sub>` — see docs/SUBDOMAINS.md.
+ */
+const tenant = resolveTenant();
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -84,6 +99,9 @@ const App = () => (
             navigation have a router context to work with. */}
         <ErrorBoundary>
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div></div>}>
+          {tenant.kind === "hotel" ? (
+            <TenantRoutes subdomain={tenant.subdomain} />
+          ) : (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/about" element={<About />} />
@@ -158,6 +176,7 @@ const App = () => (
               <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['admin' as UserRole]}><AdminServices /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          )}
         </Suspense>
         </ErrorBoundary>
       </BrowserRouter>
