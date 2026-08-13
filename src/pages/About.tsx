@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
+import Seo from "@/components/Seo";
+import { absoluteUrl, buildTitle } from "@/lib/seo";
 import { Building2, Users, Shield, Award, MapPin, Phone, Mail, Clock } from "lucide-react";
 
 const About = () => {
@@ -10,6 +12,11 @@ const About = () => {
     // instead, unconditionally — spending the same 80px on desktop where the
     // nav is md:hidden, and leaving anything outside <main> uncovered.
     <div className="min-h-screen bg-background pb-20 md:pb-0">
+      <Seo
+        title={buildTitle("About Us — Mogadishu's Trusted Rental Platform")}
+        description="Who we are: a Mogadishu rental marketplace connecting tenants with verified landlords and agents across all 18 districts. Our mission, our team and how to reach us."
+        canonical={absoluteUrl("/about")}
+      />
       <Header />
 
       <main className="pt-20">

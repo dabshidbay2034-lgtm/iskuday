@@ -3,6 +3,8 @@ import { BarChart3, Eye, Lock, ShieldCheck } from "lucide-react";
 
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
+import Seo from "@/components/Seo";
+import { absoluteUrl, buildTitle } from "@/lib/seo";
 
 /**
  * Plain-language description of what the app measures.
@@ -22,6 +24,14 @@ const Privacy = () => {
     // mobile, the way every other page does it — otherwise the nav is free to
     // land on the contact paragraph that closes the page.
     <div className="min-h-screen bg-background pb-20 md:pb-0">
+      {/* Indexable on purpose. A visible, crawlable privacy page is one of the
+          trust signals Google looks for on a site that handles enquiries, and
+          it is the page users search for by name ("mogadishurents privacy"). */}
+      <Seo
+        title={buildTitle("Privacy & Analytics")}
+        description="What MogadishuRents measures when you use the site and what it deliberately does not: usage analytics, anonymised session replay, and the data we never collect."
+        canonical={absoluteUrl("/privacy")}
+      />
       <Header />
 
       <main className="pt-20">

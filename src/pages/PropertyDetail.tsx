@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
+import Seo from "@/components/Seo";
+import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
+import { breadcrumbLd, propertyListingLd } from "@/lib/structured-data";
 import ImageGallery from "@/components/ImageGallery";
 import { BookingRequestForm } from "@/components/BookingRequestForm";
 
@@ -117,6 +120,15 @@ const PropertyDetail = () => {
   if (!property) {
     return (
       <div className="min-h-screen bg-background pb-20 md:pb-0">
+        {/* Deleted, unlisted or bogus id. vercel.json returns HTTP 200 for it,
+            so noindex is the only thing stopping every dead listing URL from
+            being indexed as a live page. */}
+        <Seo
+          title={buildTitle("Property Not Found")}
+          description="This listing is no longer available. Browse other verified houses, apartments and hotels for rent in Mogadishu."
+          canonical={absoluteUrl(`/property/${encodeURIComponent(id ?? "")}`)}
+          noindex
+        />
         <Header />
         <div className="container py-20 text-center">
           <p className="text-muted-foreground text-lg mb-4">Property not found</p>
@@ -129,6 +141,33 @@ const PropertyDetail = () => {
 
   const imageUrls = images?.map((img) => img.image_url) || [];
   const isHotel = property.type === "hotel";
+
+  // ── SEO ──────────────────────────────────────────────────────────────────
+  // Everything below runs only after the query resolved AND returned a row, so
+  // this page never emits a canonical for a URL that is really a 404 — a
+  // canonical on a dead listing is an invitation to index it.
+  const priceUnit = isHotel ? "night" : "month";
+  const seoTitle = buildTitle(
+    `${property.title} — $${property.price.toLocaleString()}/${priceUnit} in ${property.location}, Mogadishu`,
+  );
+
+  // The owner's own words win: they contain the specifics ("near Bakaara",
+  // "generator included") that make a snippet worth clicking. The generated
+  // fallback exists because a listing with an empty description would otherwise
+  // inherit whatever description was already in the head.
+  const rooms = [
+    property.bedrooms != null && `${property.bedrooms} bedroom${property.bedrooms === 1 ? "" : "s"}`,
+    property.toilets != null && `${property.toilets} bathroom${property.toilets === 1 ? "" : "s"}`,
+  ].filter(Boolean).join(", ");
+  const seoDescription = truncate(
+    property.description ||
+      [
+        `${propertyTypeLabel(property.type)} for rent in ${property.location}, Mogadishu`,
+        rooms && ` — ${rooms}`,
+        `. $${property.price.toLocaleString()} per ${priceUnit}. Guri kiro ah. View photos and contact us on WhatsApp.`,
+      ].filter(Boolean).join(""),
+    158,
+  );
 
   const amenities = [
     property.bedrooms != null && { icon: Bed, label: `${property.bedrooms} Bedroom${property.bedrooms > 1 ? "s" : ""}`, color: "bg-primary/10 text-primary" },
@@ -145,6 +184,56 @@ const PropertyDetail = () => {
 
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-0">
+      {/* type="product" rather than "website": a listing with a price and
+          availability is the closest thing this site has to a product page, and
+          it is what the Offer structured data on this route describes. */}
+      <Seo
+        title={seoTitle}
+        description={seoDescription}
+        canonical={absoluteUrl(`/property/${property.id}`)}
+        image={imageUrls[0]}
+        type="product"
+        // RealEstateListing + Offer is what lets Google match this page to
+        // "3 bedroom apartment Hodan" rather than treating it as loose text.
+        // Breadcrumbs give the district its own node in the trail, which is the
+        // signal local search actually reads.
+        jsonLd={[
+          propertyListingLd({
+            id: property.id,
+            title: property.title,
+            description: property.description,
+            type: property.type,
+            price: property.price,
+            deposit: property.deposit,
+            location: property.location,
+            images: imageUrls,
+            isAvailable: property.is_available,
+            isDailyRate: property.is_daily_rate,
+            bedrooms: property.bedrooms,
+            toilets: property.toilets,
+            livingRooms: property.living_rooms,
+            kitchens: property.kitchens,
+            floorNumber: property.floor_number,
+            hasParking: property.has_parking,
+            hasCctv: property.has_cctv,
+            isFurnished: property.is_furnished,
+            hasElevator: property.has_elevator,
+            hasBalcony: property.has_balcony,
+            createdAt: property.created_at,
+          }),
+          breadcrumbLd([
+            { name: "Home", url: absoluteUrl("/") },
+            { name: "Properties", url: absoluteUrl("/properties") },
+            ...(property.location
+              ? [{
+                  name: property.location,
+                  url: absoluteUrl(`/properties?district=${encodeURIComponent(property.location)}`),
+                }]
+              : []),
+            { name: property.title, url: absoluteUrl(`/property/${property.id}`) },
+          ]),
+        ]}
+      />
       <Header />
 
       {/* Back button overlaid on gallery (mobile) */}

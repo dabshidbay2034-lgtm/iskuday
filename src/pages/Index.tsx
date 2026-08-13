@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import Seo from "@/components/Seo";
+import { absoluteUrl } from "@/lib/seo";
 import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
 import CategorySection from "@/components/CategorySection";
@@ -17,6 +19,13 @@ const features = [
 const Index = () => {
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
+      {/* The homepage is the ONE page whose canonical is legitimately the site
+          root. Every other route must declare its own — see src/lib/seo.ts. */}
+      <Seo
+        title="MogadishuRents — Rent Houses, Apartments & Hotels in Mogadishu"
+        description="Mogadishu's rental marketplace. Browse verified houses, apartments, hotels and commercial spaces for rent across all 18 districts. Guri kiro ah oo Muqdisho ah."
+        canonical={absoluteUrl("/")}
+      />
       <InstallBanner />
       <Header />
       <HeroSection />

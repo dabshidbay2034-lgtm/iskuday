@@ -1,17 +1,60 @@
+# robots.txt — https://mogadishurents.com
+#
+# THIS FILE IS NOT A SECURITY CONTROL. It is world-readable at /robots.txt, so
+# every path named below is a path you have just published to the whole
+# internet. It only asks well-behaved crawlers not to fetch those URLs; it stops
+# nothing and no one. The actual protection for these routes is <ProtectedRoute>
+# in src/App.tsx plus row-level security in Postgres. Never put a path here that
+# would be a problem to reveal, and never treat an entry here as "hidden".
+#
+# The previous version disallowed /x9k2m-panel and /v7r3p-overview — routes that
+# do not exist in App.tsx. Someone obfuscated the admin paths here while leaving
+# the real ones (/admin-panel, /semiadmin) fully crawlable. That is the failure
+# mode this comment exists to prevent: obfuscating robots.txt buys nothing and
+# lets the real routes go unlisted.
+#
+# What we block and why: authenticated-only surfaces have nothing a search
+# result could usefully show, so crawling them only wastes crawl budget that
+# should be going to listings. /join/ additionally carries a live invite token
+# in the URL and must never be fetched by a crawler.
+
 User-agent: Googlebot
 Allow: /
-Disallow: /x9k2m-panel
-Disallow: /v7r3p-overview
+Disallow: /signin
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /complete-profile
 Disallow: /dashboard
 Disallow: /profile
 Disallow: /saved
 Disallow: /add-property
+Disallow: /manage/
+Disallow: /admin-panel
+Disallow: /semiadmin
+Disallow: /admin/
+Disallow: /join/
 
 User-agent: Bingbot
 Allow: /
-Disallow: /x9k2m-panel
-Disallow: /v7r3p-overview
+Disallow: /signin
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /complete-profile
+Disallow: /dashboard
+Disallow: /profile
+Disallow: /saved
+Disallow: /add-property
+Disallow: /manage/
+Disallow: /admin-panel
+Disallow: /semiadmin
+Disallow: /admin/
+Disallow: /join/
 
+# Social unfurlers are not indexers — they fetch one URL to build a link
+# preview. Blocking them would break the WhatsApp/Facebook/X card that is how
+# most listings actually get shared here, so they stay unrestricted.
 User-agent: Twitterbot
 Allow: /
 
@@ -20,7 +63,20 @@ Allow: /
 
 User-agent: *
 Allow: /
-Disallow: /x9k2m-panel
-Disallow: /v7r3p-overview
+Disallow: /signin
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /complete-profile
+Disallow: /dashboard
+Disallow: /profile
+Disallow: /saved
+Disallow: /add-property
+Disallow: /manage/
+Disallow: /admin-panel
+Disallow: /semiadmin
+Disallow: /admin/
+Disallow: /join/
 
+# Generated at build time by scripts/generate-sitemap.mjs — see docs/SEO.md.
 Sitemap: https://mogadishurents.com/sitemap.xml

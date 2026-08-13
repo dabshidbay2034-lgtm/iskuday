@@ -38,6 +38,17 @@ export type HotelInvite = {
   createdAt: string | null;
   expiresAt: string | null;
   acceptedAt: string | null;
+  /**
+   * The invite secret, and therefore the ONLY way to deliver an invitation.
+   *
+   * The JWT carries no `email` claim (verified against a live session), so
+   * authorization is the token, not the address — the address is a label. RLS
+   * only exposes this to a hotel admin, i.e. the person doing the inviting.
+   * Without it on the client there is no way to hand someone an invite unless
+   * the Resend pipeline is deployed, which would make this feature depend on
+   * infrastructure that is not up yet.
+   */
+  token: string | null;
 };
 
 type RawHotelInvite = {
@@ -49,7 +60,14 @@ type RawHotelInvite = {
   created_at: string | null;
   expires_at: string | null;
   accepted_at: string | null;
+  token: string | null;
 };
+
+/** The URL to hand someone. Most of this market receives it over WhatsApp. */
+export function inviteJoinUrl(token: string | null | undefined): string | null {
+  if (!token) return null;
+  return `${window.location.origin}/join/${token}`;
+}
 
 function toInvite(row: RawHotelInvite): HotelInvite {
   return {
@@ -63,6 +81,7 @@ function toInvite(row: RawHotelInvite): HotelInvite {
     createdAt: row.created_at ?? null,
     expiresAt: row.expires_at ?? null,
     acceptedAt: row.accepted_at ?? null,
+    token: row.token ?? null,
   };
 }
 

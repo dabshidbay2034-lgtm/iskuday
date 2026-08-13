@@ -1,4 +1,4 @@
-import type { UserRole } from "@/lib/types";
+﻿import type { UserRole } from "@/lib/types";
 import { PERMISSIONS } from "@/lib/permissions";
 import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import BillingGate from "@/components/BillingGate";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import AnalyticsBridge from "@/components/AnalyticsBridge";
 import AcceptInvitesOnSignIn from "@/components/hotel/AcceptInvitesOnSignIn";
@@ -45,6 +46,7 @@ const Services = lazy(() => import("./pages/Services"));
 const AdminServices = lazy(() => import("./pages/AdminServices"));
 const AgencyProfile = lazy(() => import("./pages/AgencyProfile"));
 const JoinHotel = lazy(() => import("./pages/JoinHotel"));
+const Billing = lazy(() => import("./pages/Billing"));
 
 
 const queryClient = new QueryClient({
@@ -58,7 +60,7 @@ const queryClient = new QueryClient({
       staleTime: 5 * 60 * 1000,
       refetchOnWindowFocus: false,
       // Never retry auth/permission failures. A 401 means the JWT was rejected
-      // and a 403 means RLS said no — neither changes by asking again, and
+      // and a 403 means RLS said no â€” neither changes by asking again, and
       // retrying turns one rejected request into four identical ones.
       retry: (failureCount, error: unknown) => {
         const status = (error as { status?: number })?.status;
@@ -74,11 +76,11 @@ const queryClient = new QueryClient({
  *
  * `jazeera.mogadishurents.com` must serve that hotel's own website, not the
  * marketplace with a hotel page inside it. The host cannot change without a
- * full page load, so this never needs to be reactive — and resolving it here
+ * full page load, so this never needs to be reactive â€” and resolving it here
  * means the platform's routes are never even mounted on a tenant host.
  *
  * Locally there is no wildcard cert, so `resolveTenant` also honours
- * `<sub>.localhost:8080` and `?__tenant=<sub>` — see docs/SUBDOMAINS.md.
+ * `<sub>.localhost:8080` and `?__tenant=<sub>` â€” see docs/SUBDOMAINS.md.
  */
 const tenant = resolveTenant();
 
@@ -125,11 +127,21 @@ const App = () => (
             <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['owner', 'agent', 'hotel_manager']}><Dashboard /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProfileSettings /></ProtectedRoute>} />
             <Route path="/saved" element={<ProtectedRoute><Saved /></ProtectedRoute>} />
+            {/* Plans, trial status and payment history (20260816000001).
+
+                Signed-in only, and deliberately NOT gated on allowedRoles or an
+                org permission. Everyone who can reach a paid surface has to be
+                able to reach the page explaining what it costs â€” including an
+                agency's staff, who are often the ones who actually make the
+                EVC/Zaad transfer. A role gate here would hide the price list
+                from the person paying it, and every paywall in the app points
+                at this route. */}
+            <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
             <Route path="/admin-panel" element={<ProtectedRoute allowedRoles={['admin' as UserRole]}><Admin /></ProtectedRoute>} />
             <Route path="/semiadmin" element={<ProtectedRoute allowedRoles={['semi_admin' as UserRole, 'admin' as UserRole]}><SemiAdmin /></ProtectedRoute>} />
             <Route path="/team" element={<ProtectedRoute requireOrg={true} requirePermission={PERMISSIONS.STAFF_MANAGE}><Team /></ProtectedRoute>} />
 
-            {/* Property management — signed-in only, deliberately NOT gated on
+            {/* Property management â€” signed-in only, deliberately NOT gated on
                 requireOrg or an org permission.
 
                 A solo landlord has no Clerk organization, so requireOrg would
@@ -142,31 +154,31 @@ const App = () => (
                 neither sees an empty dashboard and nothing else. Mutating
                 actions stay gated inside the pages. */}
                         <Route path="/manage" element={<ProtectedRoute><Manage /></ProtectedRoute>} />
-            <Route path="/manage/property/:id" element={<ProtectedRoute><ManageProperty /></ProtectedRoute>} />
-            {/* Front-desk hotel board (20260807000001) — bookings, housekeeping,
+            <Route path="/manage/property/:id" element={<ProtectedRoute><BillingGate plan="pms"><ManageProperty /></BillingGate></ProtectedRoute>} />
+            {/* Front-desk hotel board (20260807000001) â€” bookings, housekeeping,
                             today's arrivals/departures across the managed hotel rooms.
 
-                Hotel web pages (20260808000001) — the hotelier's page builder.
+                Hotel web pages (20260808000001) â€” the hotelier's page builder.
 
                 NOT gated on allowedRoles, on purpose, same reasoning as the block
                 above: hotel_managed() in the DB grants access to more than
-                platform-role hotel_manager — org:admin/manager/agent staff, and
+                platform-role hotel_manager â€” org:admin/manager/agent staff, and
                 per-hotel `hotel_members` (hotel_admin/hotel_editor, 20260810000002)
                 invited onto a single hotel without ever holding the platform role
                 themselves. An allowedRoles router gate is stricter than that and
                 silently locks out every one of them before they ever reach the
                 page. The "agency can't create a hotel" rule lives where it
-                belongs — at CREATION time, in AddProperty's account-type filter
+                belongs â€” at CREATION time, in AddProperty's account-type filter
                 and the properties/hotels INSERT triggers in
-                20260812000002_account_type_separation.sql — not here. Someone
+                20260812000002_account_type_separation.sql â€” not here. Someone
                 with no route into a hotel simply finds an empty portfolio, same
                 as every other /manage/* page. */}
-                        <Route path="/manage/hotel" element={<ProtectedRoute><HotelManager /></ProtectedRoute>} />
-                                                <Route path="/manage/hotels" element={<ProtectedRoute><ManageHotels /></ProtectedRoute>} />
-                                                <Route path="/manage/hotels/:id" element={<ProtectedRoute><EditHotel /></ProtectedRoute>} />
-                                                {/* Team + payroll (20260810000001) — the operator's staff and pay runs. */}
-                                                <Route path="/manage/staff" element={<ProtectedRoute><StaffManager /></ProtectedRoute>} />
-                                                <Route path="/manage/payroll" element={<ProtectedRoute><PayrollPage /></ProtectedRoute>} />
+                        <Route path="/manage/hotel" element={<ProtectedRoute><BillingGate plan="hotel"><HotelManager /></BillingGate></ProtectedRoute>} />
+                                                <Route path="/manage/hotels" element={<ProtectedRoute><BillingGate plan="hotel"><ManageHotels /></BillingGate></ProtectedRoute>} />
+                                                <Route path="/manage/hotels/:id" element={<ProtectedRoute><BillingGate plan="hotel"><EditHotel /></BillingGate></ProtectedRoute>} />
+                                                {/* Team + payroll (20260810000001) â€” the operator's staff and pay runs. */}
+                                                <Route path="/manage/staff" element={<ProtectedRoute><BillingGate plan="hotel"><StaffManager /></BillingGate></ProtectedRoute>} />
+                                                <Route path="/manage/payroll" element={<ProtectedRoute><BillingGate plan="hotel"><PayrollPage /></BillingGate></ProtectedRoute>} />
 
             {/* Public services catalog + agency/hotel profiles. */}
               <Route path="/services" element={<Services />} />
@@ -185,3 +197,4 @@ const App = () => (
 );
 
 export default App;
+

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
-import { Loader2, Mail, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
+import { Copy, Loader2, Mail, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
 
+import { toast } from "sonner";
 import { useAppAuth } from "@/hooks/use-auth";
 import {
   canChangeHotelRole,
@@ -21,6 +22,7 @@ import {
   useHotelInvites,
   useInviteToHotel,
   useRevokeHotelInvite,
+  inviteJoinUrl,
 } from "@/hooks/use-hotel-invites";
 
 import { Badge } from "@/components/ui/badge";
@@ -238,21 +240,50 @@ export function HotelTeamCard({
                     {inv.email}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    {HOTEL_ROLES[inv.role].label} · joins on their next sign-in
+                    {HOTEL_ROLES[inv.role].label} · joins when they open the link
                   </p>
                 </div>
                 {canManage && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                    aria-label={`Revoke the invitation to ${inv.email}`}
-                    disabled={revokeInvite.isPending}
-                    onClick={() => revokeInvite.mutate(inv.id)}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </Button>
+                  <>
+                    {/* The link IS the invitation. Email delivery needs the
+                        send-notification function deployed and Resend
+                        configured; copying the link works right now, and this
+                        market shares over WhatsApp anyway. */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label={`Copy the invitation link for ${inv.email}`}
+                      title="Copy invite link"
+                      disabled={!inv.token}
+                      onClick={async () => {
+                        const url = inviteJoinUrl(inv.token);
+                        if (!url) return;
+                        try {
+                          await navigator.clipboard.writeText(url);
+                          toast.success("Invite link copied — send it to them");
+                        } catch {
+                          // Clipboard needs a secure context; surface the link
+                          // rather than failing silently on http:// or old Safari.
+                          window.prompt("Copy this invite link:", url);
+                        }
+                      }}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`Revoke the invitation to ${inv.email}`}
+                      disabled={revokeInvite.isPending}
+                      onClick={() => revokeInvite.mutate(inv.id)}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </>
                 )}
               </li>
             ))}

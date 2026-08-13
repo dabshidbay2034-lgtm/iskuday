@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
-import { describeWriteError } from "@/hooks/use-rent";
+import { describeWriteError, useErrorToast } from "@/hooks/use-rent";
 
 /**
  * Hotel STAFF management + payroll data layer (migration 20260810000001).
@@ -161,6 +161,17 @@ type RawPayment = {
 const toNum = (v: string | number | null | undefined): number | null =>
   v == null ? null : Number(v);
 
+/**
+ * Snap a running money total back onto cents. Both `hotel_staff.salary` and
+ * `staff_payroll.amount` are NUMERIC(12,2) in Postgres, but they arrive as JS
+ * doubles, so accumulating them reintroduces binary drift Postgres never had —
+ * 0.1 + 0.2 = 0.30000000000000004, and formatMoney only drops the cents when
+ * the number is an exact integer, so a $1,200.00 payroll would print as
+ * "$1,200.00" or worse. Round every total the UI shows, not the inputs.
+ */
+export const roundCents = (value: number): number =>
+  Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+
 function toStaff(row: RawStaff): HotelStaff {
   return {
     id: row.id,
@@ -239,7 +250,23 @@ export function monthBounds(value: string): { start: string; end: string } {
 
 // ── Keys ─────────────────────────────────────────────────────────────────────
 
-export const hotelStaffKey = () => ["hotel-staff", "mine"] as const;
+/**
+ * Roster query key. The list is filtered CLIENT-side by the signed-in user's
+ * Clerk id + active org (RLS already narrowed it server-side, this trims an
+ * admin's firehose), so the identity has to be part of the key: Clerk resolves
+ * `useOrganization()` a tick AFTER `isSignedIn` flips, and with a fixed key the
+ * roster fetched during that gap — filtered against a still-null orgId, so an
+ * agency's members are dropped — would be cached forever and never refetched.
+ * Same reason a stale roster survived a sign-out into a different account.
+ *
+ * Called bare it returns the 2-element PREFIX so every existing
+ * `invalidateQueries({ queryKey: hotelStaffKey() })` keeps matching — the same
+ * contract payrollKey below had to be fixed to honour.
+ */
+export const hotelStaffKey = (userId?: string | null, orgId?: string | null) =>
+  userId === undefined
+    ? (["hotel-staff", "mine"] as const)
+    : (["hotel-staff", "mine", userId ?? null, orgId ?? null] as const);
 /**
  * Payroll query key. Called WITHOUT an argument it must return a 2-element
  * PREFIX, not `[..., undefined]`.
@@ -263,8 +290,8 @@ export const payrollKey = (periodStart?: string) =>
  */
 export function useHotelStaffList() {
   const { isSignedIn, userId, orgId } = useAppAuth();
-  return useQuery({
-    queryKey: hotelStaffKey(),
+  const query = useQuery({
+    queryKey: hotelStaffKey(userId, orgId),
     enabled: Boolean(isSignedIn),
     queryFn: async (): Promise<HotelStaff[]> => {
       const { data, error } = await looseFrom("hotel_staff")
@@ -276,12 +303,19 @@ export function useHotelStaffList() {
         .filter((s) => s.ownerId === userId || (orgId != null && s.orgId === orgId));
     },
   });
+
+  // Without this a failed roster read is indistinguishable from "no staff yet":
+  // Payroll's "For *" picker just renders an empty list and the operator has no
+  // idea why nobody is selectable.
+  useErrorToast(query.error, "Couldn't load the team");
+
+  return query;
 }
 
 /** Every payroll row that falls inside the given month (with its staff member). */
 export function useHotelPayroll(periodStart?: string) {
   const { isSignedIn } = useAppAuth();
-  return useQuery({
+  const query = useQuery({
     queryKey: payrollKey(periodStart),
     enabled: Boolean(isSignedIn && periodStart),
     queryFn: async (): Promise<PayrollItem[]> => {
@@ -295,6 +329,13 @@ export function useHotelPayroll(periodStart?: string) {
       return ((data as RawPayment[]) ?? []).map(toPayment);
     },
   });
+
+  // This query failing used to render as the cheerful "Nothing here yet" empty
+  // state — exactly how the `staff(...)` embed pointing at a table that doesn't
+  // exist stayed invisible for so long. A broken read must LOOK broken.
+  useErrorToast(query.error, "Couldn't load payroll for this month");
+
+  return query;
 }
 
 // ── Mutations: staff ─────────────────────────────────────────────────────────
@@ -306,6 +347,10 @@ export function useCreateHotelStaff() {
   return useMutation({
     mutationFn: async (input: HotelStaffFormInput): Promise<HotelStaff> => {
       if (!userId) throw new Error("Not signed in.");
+      // `name TEXT NOT NULL` happily accepts '', so a roster row with no name is
+      // a write the database will never refuse. Guard it here as well as in the
+      // form — a nameless member renders as a blank row you can't identify.
+      if (!input.name.trim()) throw new Error("Enter their name.");
       const { data, error } = await looseFrom("hotel_staff")
         .insert({
           owner_id: userId,
@@ -491,6 +536,25 @@ export function useDeletePayrollItem() {
   });
 }
 
+/**
+ * `generate_monthly_payroll` shipped declared STABLE while its body INSERTs, so
+ * Postgres refuses the write with 0A000 the moment it has an actual row to add.
+ * 20260811000001 drops the STABLE keyword, but until that migration is APPLIED
+ * the RPC still fails in production — and the raw driver message ("INSERT is not
+ * allowed in a non-volatile function") reads like a bug in the page rather than
+ * a database that's behind. Name the real cause so nobody hunts the wrong one.
+ */
+function describePayrollRunError(error: unknown): string {
+  const err = error as { code?: string; message?: string } | null;
+  if (
+    err?.code === "0A000" ||
+    /non-volatile function|not allowed in a (non-volatile|read-only)/i.test(err?.message ?? "")
+  ) {
+    return "The payroll generator needs a pending database update (migration 20260811000001). Nothing was created — apply it, then try again.";
+  }
+  return describeWriteError(error, "Couldn't generate the payroll");
+}
+
 /** Pre-fill the month's salary rows for every ACTIVE monthly-rate staff member. */
 export function useGenerateMonthlyPayroll() {
   const queryClient = useQueryClient();
@@ -505,16 +569,16 @@ export function useGenerateMonthlyPayroll() {
       if (error) throw error;
       return Number(data) || 0;
     },
-    onSuccess: (count, month) => {
+    onSuccess: (count) => {
       toast.success(
         count > 0
           ? `Generated ${count} salary ${count === 1 ? "row" : "rows"} for this month`
           : "Nothing to add — everyone active already has a salary row",
       );
-      queryClient.invalidateQueries({ queryKey: payrollKey(monthBounds(month).start) });
+      // The bare 2-element key is a PREFIX of every month's key, so this alone
+      // refreshes the month just generated as well as any other month cached.
       queryClient.invalidateQueries({ queryKey: payrollKey() });
     },
-    onError: (error: unknown) =>
-      toast.error(describeWriteError(error, "Couldn't generate the payroll")),
+    onError: (error: unknown) => toast.error(describePayrollRunError(error)),
   });
 }

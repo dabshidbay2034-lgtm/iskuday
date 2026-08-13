@@ -1,6 +1,8 @@
 import { useState } from "react";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
+import Seo from "@/components/Seo";
+import { absoluteUrl, buildTitle } from "@/lib/seo";
 import { usePublishedServices, type Service } from "@/hooks/use-services";
 import { ServiceCard } from "@/components/services/ServiceCard";
 import { ServiceInquiryDialog } from "@/components/services/ServiceInquiryDialog";
@@ -20,6 +22,14 @@ const Services = () => {
 
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-0">
+      {/* The service list is loaded async, but unlike PropertyDetail this route
+          is valid whether or not any services come back — a canonical here can
+          never point at a 404, so there is nothing to wait for. */}
+      <Seo
+        title={buildTitle("Property Services in Mogadishu — Maintenance, Cleaning & Security")}
+        description="Request vetted property services in Mogadishu: maintenance, cleaning, security management, legal consulting and more. Certified specialists, guaranteed work, fast quotes."
+        canonical={absoluteUrl("/services")}
+      />
       <Header />
 
       {/* Hero Section */}

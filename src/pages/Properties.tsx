@@ -16,6 +16,8 @@ import {
   Bed, DollarSign, Car, Cctv, Waves, ArrowUpDown, Armchair, CalendarDays,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import Seo from "@/components/Seo";
+import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import type { Property, PropertyType } from "@/lib/types";
 
@@ -53,6 +55,100 @@ const typeFilters = [
   { value: "hotel", label: "Hotels", icon: Hotel },
   { value: "commercial", label: "Commercial", icon: Briefcase },
 ];
+
+// ── SEO for a faceted listing page ──────────────────────────────────────────
+//
+// /properties is the classic crawl-budget sink: every filter is a query param,
+// every combination is a distinct URL, and free-text search makes the set
+// literally infinite. Left alone, Googlebot spends its budget on
+// ?q=asdf&minPrice=317 instead of on the 15 listings that matter.
+//
+// The policy, applied by `seoForFilters` below:
+//   1. Only `district` + `type` produce an INDEXABLE page. Those are the two
+//      facets people actually search for ("apartments Hodan"), and there are
+//      18 x 4 of them — a bounded, useful set.
+//   2. Free-text `q` and any price bound are noindex. Unbounded, and the
+//      resulting page is a personal search result, not a category.
+//   3. The canonical is rebuilt from ONLY the recognised facets, in a fixed
+//      order. That collapses ?type=X&district=Y and ?district=Y&type=X, folds
+//      the legacy ?location= alias into ?district=, normalises casing, and
+//      drops tracking params — all of which are otherwise separate URLs
+//      serving identical HTML.
+//
+// Titles/descriptions read from the URL, NOT from the filter React state. The
+// panel's district/bedroom/amenity controls change state without touching the
+// query string, so that state describes a view no crawler can ever reach.
+
+/** Plural labels for the four real category pages, keyed on the URL value. */
+const SEO_TYPE_LABELS: Record<string, { plural: string; lower: string; forRent: boolean }> = {
+  villa: { plural: "Houses", lower: "houses", forRent: true },
+  apartment: { plural: "Apartments", lower: "apartments", forRent: true },
+  // "Hotels for rent" reads as a typo — hotels are booked by the night.
+  hotel: { plural: "Hotels", lower: "hotel rooms", forRent: false },
+  commercial: { plural: "Commercial Spaces", lower: "commercial spaces", forRent: true },
+};
+
+/**
+ * Fold a raw ?district= value onto the canonical spelling from the district
+ * list, case-insensitively.
+ *
+ * It must stay a real district name rather than becoming a lowercase slug: the
+ * results are filtered with an exact `p.location !== district` comparison, so a
+ * canonical pointing at ?district=hodan would advertise a URL that renders zero
+ * properties. A canonical has to serve the same content as the page declaring
+ * it, or it is just a fancier version of the bug this file is fixing.
+ */
+function canonicalDistrict(raw: string): string | null {
+  const needle = raw.trim().toLowerCase();
+  if (!needle || needle === "all") return null;
+  return MOGADISHU_DISTRICTS.find((d) => d.toLowerCase() === needle) ?? null;
+}
+
+function seoForFilters(params: {
+  type: string;
+  district: string;
+  query: string;
+  minPrice: string;
+  maxPrice: string;
+}) {
+  const type = SEO_TYPE_LABELS[params.type] ? params.type : "";
+  const district = canonicalDistrict(params.district);
+
+  // A supplied facet we do not recognise is junk (a typo, a scraper, a stale
+  // link). It still renders, but it must not be indexed as its own page.
+  const unknownFacet =
+    (params.type !== "" && type === "") || (params.district.trim() !== "" && district === null);
+  const noindex =
+    unknownFacet ||
+    params.query.trim() !== "" ||
+    params.minPrice.trim() !== "" ||
+    params.maxPrice.trim() !== "";
+
+  const search = new URLSearchParams();
+  if (district) search.set("district", district);
+  if (type) search.set("type", type);
+  const qs = search.toString();
+  // Points at the clean facet page even when noindexed, so that an inbound link
+  // to someone's filtered URL still consolidates onto a page we do want ranked.
+  const canonical = absoluteUrl(`/properties${qs ? `?${qs}` : ""}`);
+
+  const where = district ? `${district}, Mogadishu` : "Mogadishu";
+  const label = type ? SEO_TYPE_LABELS[type] : null;
+
+  const title = label
+    ? `${label.plural}${label.forRent ? " for Rent" : ""} in ${where}`
+    : `Properties for Rent in ${where}`;
+
+  const what = label ? label.lower : "houses, apartments, hotels and commercial spaces";
+  const description = truncate(
+    district
+      ? `Browse verified ${what} for rent in ${district}, Mogadishu. Compare prices, photos and amenities, then contact the owner directly. Guri kiro ah oo ${district} ah.`
+      : `Browse verified ${what} for rent across all 18 districts of Mogadishu. Compare prices, photos and amenities, then contact the owner directly. Guri kiro ah oo Muqdisho ah.`,
+    158,
+  );
+
+  return { title: buildTitle(title), description, canonical, noindex };
+}
 
 const Properties = () => {
   const { isFavorite, toggleFavorite, isAuthenticated } = useFavorites();
@@ -176,8 +272,26 @@ const Properties = () => {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
+  const seo = seoForFilters({
+    type: activeType,
+    district: districtParam,
+    query: queryParam,
+    minPrice: minPriceParam,
+    maxPrice: maxPriceParam,
+  });
+
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
+      {/* Rendered immediately rather than gated on `isLoading`: unlike
+          PropertyDetail, this route is always valid — an empty result set is a
+          real, indexable category page, not a 404 — so there is no risk of
+          publishing a canonical for a URL that does not exist. */}
+      <Seo
+        title={seo.title}
+        description={seo.description}
+        canonical={seo.canonical}
+        noindex={seo.noindex}
+      />
       <Header />
 
       <div className="container py-6">

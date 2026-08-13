@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
+import Seo from "@/components/Seo";
+import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
 import { AgencyHeader } from "@/components/agency/AgencyHeader";
 import { AgencyProperties } from "@/components/agency/AgencyProperties";
 import { Button } from "@/components/ui/button";
@@ -131,8 +133,44 @@ const AgencyProfile = () => {
   const agencyName = profile?.full_name || (properties[0]?.title ? `${properties[0].location} Agency` : "Real Estate Agency");
   const avatarUrl = profile?.avatar_url || null;
 
+  // Districts this agency actually has stock in — a far better description than
+  // a generic one, and it is the phrase renters search ("agent Hodan").
+  const districts = Array.from(new Set(properties.map((p) => p.location).filter(Boolean)));
+  const seoDescription =
+    properties.length > 0
+      ? truncate(
+          `${agencyName} has ${properties.length} ${properties.length === 1 ? "property" : "properties"} available for rent in ${districts.slice(0, 3).join(", ")}, Mogadishu. View photos, prices and contact details.`,
+          158,
+        )
+      : `${agencyName} on MogadishuRents. Browse this agency's rental listings in Mogadishu — houses, apartments, hotels and commercial spaces.`;
+
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-0">
+      {/* Held until the listings resolve so the title/description describe the
+          real portfolio rather than "0 properties". `safeOrgId === null` means
+          the id failed the injection guard above — that URL is not a real
+          agency, so it gets noindex instead of a canonical that legitimises it. */}
+      {!safeOrgId ? (
+        <Seo
+          title={buildTitle("Agency Not Found")}
+          description="This agency profile does not exist. Browse verified rentals in Mogadishu instead."
+          // Self-referential, not a redirect to /properties: pairing noindex
+          // with a canonical that points elsewhere sends Google two conflicting
+          // instructions about the same URL, and it resolves them unpredictably.
+          canonical={absoluteUrl(`/agency/${encodeURIComponent(orgId ?? "")}`)}
+          noindex
+        />
+      ) : (
+        !isLoading && (
+          <Seo
+            title={buildTitle(`${agencyName} — Rental Listings in Mogadishu`)}
+            description={seoDescription}
+            canonical={absoluteUrl(`/agency/${safeOrgId}`)}
+            image={properties[0]?.images?.[0]}
+            type="website"
+          />
+        )
+      )}
       <Header />
 
       <main className="container max-w-6xl py-8 space-y-8">

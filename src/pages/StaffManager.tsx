@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowLeft, CalendarCheck2, Mail, Pencil, Phone, Plus, Trash2, Users, Wallet,
+  ArrowLeft, CalendarCheck2, ChevronDown, FolderLock, Mail, Pencil, Phone, Plus,
+  Trash2, Users, Wallet,
 } from "lucide-react";
 
 import Header from "@/components/Header";
@@ -25,16 +26,25 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { StaffDocumentsCard } from "@/components/manage/StaffDocumentsCard";
+import { useAppAuth } from "@/hooks/use-auth";
 import { formatDay, formatMoney } from "@/hooks/use-rent";
 import {
-  HOTEL_STAFF_ROLES, useHotelStaffList,
+  HOTEL_STAFF_ROLES, roundCents, useHotelStaffList,
   useCreateHotelStaff, useUpdateHotelStaff, useToggleHotelStaffActive,
   useDeleteHotelStaff, type HotelStaff, type HotelStaffRole,
   type HotelStaffFormInput,
 } from "@/hooks/use-hotel-staff";
 
-const ROLE_LABEL: Record<HotelStaffRole, string> = Object.fromEntries(
-  HOTEL_STAFF_ROLES.map((r) => [r.value, r.label]),
+// Built with a typed reduce rather than Object.fromEntries: fromEntries erases
+// the key union down to `string`, so the result no longer satisfies
+// Record<HotelStaffRole, string> and every lookup below loses its check.
+const ROLE_LABEL = HOTEL_STAFF_ROLES.reduce(
+  (acc, r) => {
+    acc[r.value] = r.label;
+    return acc;
+  },
+  {} as Record<HotelStaffRole, string>,
 );
 
 const AVATAR_COLORS = [
@@ -72,7 +82,21 @@ const emptyForm = (): HotelStaffFormInput => ({
 const StaffManager = () => {
   const { data: staff, isPending, isError } = useHotelStaffList();
   const deleteStaff = useDeleteHotelStaff();
+  const { userId, orgId, orgRole, platformRole } = useAppAuth();
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
+
+  /**
+   * Mirrors public.hotel_staff_managed() so the document vault renders
+   * read-only for someone who can SEE the roster but not write to it (an
+   * org:viewer inside the agency). The database still has the final say — this
+   * only keeps the UI from offering an upload that RLS would reject.
+   */
+  const canManageMember = (member: HotelStaff): boolean =>
+    member.ownerId === userId
+    || (member.orgId != null
+        && member.orgId === orgId
+        && ["org:admin", "org:manager", "org:agent"].includes(orgRole ?? ""))
+    || platformRole === "admin";
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<HotelStaff | null>(null);
@@ -85,9 +109,11 @@ const StaffManager = () => {
   }, [staff, filter]);
 
   const monthlyTotal = useMemo(
-    () => (staff ?? [])
-      .filter((s) => s.active && s.payrollType === "monthly")
-      .reduce((sum, s) => sum + (s.salary ?? 0), 0),
+    () => roundCents(
+      (staff ?? [])
+        .filter((s) => s.active && s.payrollType === "monthly")
+        .reduce((sum, s) => sum + (s.salary ?? 0), 0),
+    ),
     [staff],
   );
 
@@ -206,6 +232,7 @@ const StaffManager = () => {
                 key={member.id}
                 member={member}
                 color={AVATAR_COLORS[i % AVATAR_COLORS.length]}
+                canManage={canManageMember(member)}
                 onEdit={() => openEdit(member)}
                 onDelete={() => setDeleteTarget(member)}
               />
@@ -262,69 +289,98 @@ function StatTile({ label, value, mono }: { label: string; value: string; mono?:
 }
 
 function StaffRow({
-  member, color, onEdit, onDelete,
+  member, color, canManage, onEdit, onDelete,
 }: {
   member: HotelStaff;
   color: string;
+  canManage: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const toggleActive = useToggleHotelStaffActive();
+  // The roster has no per-member detail page, so the document vault lives in an
+  // expandable panel on the row. Collapsed by default and only mounted when
+  // opened — otherwise every row would fire its own documents query on load.
+  const [docsOpen, setDocsOpen] = useState(false);
+
   return (
-    <li className="bg-card rounded-2xl border border-border p-4 flex items-center gap-3">
-      <span
-        className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-heading font-bold text-sm shrink-0"
-        style={{ backgroundColor: color }}
-      >
-        {initials(member.name)}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className={cn("font-semibold text-foreground text-sm", !member.active && "text-muted-foreground line-through")}>
-            {member.name}
-          </p>
-          <Badge variant="secondary" className="rounded-full text-[10px]">
-            {ROLE_LABEL[member.role]}
-          </Badge>
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-          {member.phone && (
-            <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" /> {member.phone}</span>
-          )}
-          {member.email && (
-            <span className="inline-flex items-center gap-1 truncate"><Mail className="w-3 h-3" /> {member.email}</span>
-          )}
-          {member.hireDate && (
-            <span className="inline-flex items-center gap-1">
-              <CalendarCheck2 className="w-3 h-3" /> Since {formatDay(`${member.hireDate}T00:00:00`)}
+    <li className="bg-card rounded-2xl border border-border p-4">
+      <div className="flex items-center gap-3">
+        <span
+          className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-heading font-bold text-sm shrink-0"
+          style={{ backgroundColor: color }}
+        >
+          {initials(member.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className={cn("font-semibold text-foreground text-sm", !member.active && "text-muted-foreground line-through")}>
+              {member.name}
+            </p>
+            <Badge variant="secondary" className="rounded-full text-[10px]">
+              {ROLE_LABEL[member.role]}
+            </Badge>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            {member.phone && (
+              <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" /> {member.phone}</span>
+            )}
+            {member.email && (
+              <span className="inline-flex items-center gap-1 truncate"><Mail className="w-3 h-3" /> {member.email}</span>
+            )}
+            {member.hireDate && (
+              <span className="inline-flex items-center gap-1">
+                <CalendarCheck2 className="w-3 h-3" /> Since {formatDay(`${member.hireDate}T00:00:00`)}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-foreground/80">
+            <span className={cn("font-medium", member.payrollType === "daily" ? "text-amber-600" : "text-teal-700")}>
+              {member.payrollType === "monthly" ? "Monthly salary" : "Daily rate"}
             </span>
-          )}
+            <span className="ml-1 font-mono">{member.salary != null ? formatMoney(member.salary) : "—"}</span>
+          </p>
         </div>
-        <p className="mt-1 text-[11px] text-foreground/80">
-          <span className={cn("font-medium", member.payrollType === "daily" ? "text-amber-600" : "text-teal-700")}>
-            {member.payrollType === "monthly" ? "Monthly salary" : "Daily rate"}
-          </span>
-          <span className="ml-1 font-mono">{member.salary != null ? formatMoney(member.salary) : "—"}</span>
-        </p>
-      </div>
-      <div className="flex flex-col items-center gap-2 shrink-0">
-        <Switch
-          checked={member.active}
-          onCheckedChange={(v) => toggleActive.mutate({ id: member.id, active: v })}
-          aria-label={`${member.active ? "Deactivate" : "Activate"} ${member.name}`}
-        />
-        <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} aria-label={`Edit ${member.name}`}>
-            <Pencil className="w-3.5 h-3.5" />
-          </Button>
-          <Button
-            variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-            onClick={onDelete} aria-label={`Remove ${member.name}`}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </Button>
+        <div className="flex flex-col items-center gap-2 shrink-0">
+          <Switch
+            checked={member.active}
+            onCheckedChange={(v) => toggleActive.mutate({ id: member.id, active: v })}
+            aria-label={`${member.active ? "Deactivate" : "Activate"} ${member.name}`}
+          />
+          <div className="flex items-center gap-0.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} aria-label={`Edit ${member.name}`}>
+              <Pencil className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={onDelete} aria-label={`Remove ${member.name}`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setDocsOpen((o) => !o)}
+        aria-expanded={docsOpen}
+        className="mt-3 w-full flex items-center justify-center gap-1.5 rounded-xl border border-border py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+      >
+        <FolderLock className="w-3.5 h-3.5" />
+        {docsOpen ? "Hide documents" : "Documents"}
+        <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", docsOpen && "rotate-180")} />
+      </button>
+
+      {docsOpen && (
+        <div className="mt-3">
+          <StaffDocumentsCard
+            staffId={member.id}
+            staffName={member.name}
+            canManage={canManage}
+          />
+        </div>
+      )}
     </li>
   );
 }
@@ -362,12 +418,18 @@ function StaffFormDialog({
   );
   const [touched, setTouched] = useState(false);
 
-  const nameError = touched && form.name.trim().length < 2 ? "Enter their name." : null;
+  // Validity is derived from the VALUES; `touched` only decides whether to show
+  // it. Folding `touched` into the predicate itself made both errors null on the
+  // very first submit — the same render that flips touched to true — so the
+  // guard in submit() waved through an untouched form and registered a staff
+  // member with an empty name (`name TEXT NOT NULL` accepts '').
   const salaryRaw = form.salary == null ? "" : String(form.salary);
-  const salaryError =
-    touched && salaryRaw.trim() !== "" && (!Number.isFinite(Number(salaryRaw)) || Number(salaryRaw) < 0)
-      ? "Enter an amount 0 or above."
-      : null;
+  const nameInvalid = form.name.trim().length < 2;
+  const salaryInvalid =
+    salaryRaw.trim() !== "" && (!Number.isFinite(Number(salaryRaw)) || Number(salaryRaw) < 0);
+
+  const nameError = touched && nameInvalid ? "Enter their name." : null;
+  const salaryError = touched && salaryInvalid ? "Enter an amount 0 or above." : null;
 
   const set = <K extends keyof HotelStaffFormInput>(key: K, value: HotelStaffFormInput[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -375,7 +437,7 @@ function StaffFormDialog({
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (nameError || salaryError) return;
+    if (nameInvalid || salaryInvalid) return;
 
     const input: HotelStaffFormInput = {
       ...form,

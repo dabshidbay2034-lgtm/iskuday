@@ -17,10 +17,11 @@ import { useToast } from "@/hooks/use-toast";
 import { toast } from "sonner";
 import {
   Edit, Trash2, Eye, EyeOff, Shield, AlertTriangle, Users, CheckCircle, XCircle, Building,
-  Search, UserCheck, UserX, Phone, Filter
+  Search, UserCheck, UserX, Phone, Filter, Wallet
 } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
 import { useAppAuth } from "@/hooks/use-auth";
+import { BillingAdminPanel } from "@/components/admin/BillingAdminPanel";
 import type { UserRole } from "@/lib/types";
 
 type PropertyWithDetails = Tables<"properties"> & {
@@ -296,6 +297,10 @@ const Admin = () => {
                   {pendingUsers.length}
                 </Badge>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="billing" className="flex items-center gap-2">
+              <Wallet className="h-4 w-4" />
+              Billing
             </TabsTrigger>
           </TabsList>
 
@@ -593,6 +598,13 @@ const Admin = () => {
                 <p className="text-muted-foreground">No users match your filters</p>
               </div>
             )}
+          </TabsContent>
+
+          {/* Billing Tab — subscriptions, payments and manual activation.
+              With no payment processor this is the only way a customer who has
+              paid by EVC/Zaad/Sifalo gets unlocked without hand-written SQL. */}
+          <TabsContent value="billing" className="space-y-4">
+            <BillingAdminPanel />
           </TabsContent>
         </Tabs>
       </div>

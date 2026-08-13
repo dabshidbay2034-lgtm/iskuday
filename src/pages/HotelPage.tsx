@@ -5,6 +5,9 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
+import Seo from "@/components/Seo";
+import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
+import { breadcrumbLd, hotelLd } from "@/lib/structured-data";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { brandFromHotel, PageSectionView } from "@/components/hotel/PageSectionView";
@@ -88,6 +91,15 @@ const HotelPage = () => {
   if (!hotel) {
     return (
       <div className="min-h-screen bg-background pb-20 md:pb-0">
+        {/* A draft or missing hotel is a soft 404 (vercel.json serves it with
+            HTTP 200), so it must be noindexed explicitly or Google will index
+            every unpublished slug as a real page. */}
+        <Seo
+          title={buildTitle("Hotel Page Not Available")}
+          description="This hotel page isn't published yet. Browse hotels and nightly rooms available in Mogadishu instead."
+          canonical={absoluteUrl(`/hotels/${encodeURIComponent(slug ?? "")}`)}
+          noindex
+        />
         <Header />
         <div className="container max-w-2xl py-24 text-center">
           <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -115,12 +127,70 @@ const HotelPage = () => {
   const hasContact = hotel.sections.some((s) => s.type === "contact");
   const brand = brandFromHotel(hotel);
 
+  // Owner-written copy first, tagline second, generated line last. All three are
+  // user-controlled free text, so everything goes through truncate() — which
+  // also collapses the newlines a textarea puts in, since a raw \n inside a
+  // meta content="" attribute is what makes unfurlers drop the description.
+  const hotelDescription = truncate(
+    hotel.description ||
+      hotel.tagline ||
+      `${hotel.name} — hotel rooms in Mogadishu, Somalia. See photos, nightly rates and contact details, and book direct.`,
+    158,
+  );
+
   return (
     // `pb-20 md:pb-0` matches the loading and not-published branches: BottomNav
     // is fixed at z-50 on mobile, and without the clearance it sits on top of
     // the footer — the copyright and the "Powered by Mogadishu Rents" link both
     // become untappable on a phone, which is most of this audience.
     <div className="min-h-screen bg-background pb-20 md:pb-0">
+      {/* Reached only after `hotel` resolved and is published, so the canonical
+          is guaranteed to describe a real, live page. `hotel.slug` (not the raw
+          `slug` param) is the canonical spelling straight from the database. */}
+      <Seo
+        title={buildTitle(`${hotel.name} — Hotel in Mogadishu`)}
+        description={hotelDescription}
+        canonical={absoluteUrl(`/hotels/${hotel.slug}`)}
+        image={hotel.heroImageUrl || hotel.logoUrl || hotel.gallery[0]}
+        // Lodging has the best-supported rich results of anything on this site,
+        // and the rooms carry per-NIGHT offers — publishing a nightly rate as
+        // monthly would be a 30x misstatement of price.
+        jsonLd={[
+          hotelLd(
+            {
+              slug: hotel.slug,
+              name: hotel.name,
+              tagline: hotel.tagline,
+              description: hotel.description,
+              heroImageUrl: hotel.heroImageUrl,
+              logoUrl: hotel.logoUrl,
+              gallery: hotel.gallery,
+              contactPhone: hotel.contactPhone,
+              contactWhatsapp: hotel.contactWhatsapp,
+              contactEmail: hotel.contactEmail,
+              address: hotel.address,
+              mapsUrl: hotel.mapsUrl,
+              // HotelSocials is a fixed-key interface with no index signature,
+              // so it needs widening to the builder's Record. The builder only
+              // reads values matching ^https?://, so a bare @handle is dropped
+              // rather than turned into a fake URL.
+              socials: hotel.socials as Record<string, string | null | undefined>,
+            },
+            rooms.map((room) => ({
+              id: room.id,
+              name: room.title,
+              price: room.price,
+              location: room.location,
+              images: room.images,
+            })),
+          ),
+          breadcrumbLd([
+            { name: "Home", url: absoluteUrl("/") },
+            { name: "Hotels", url: absoluteUrl("/properties?type=hotel") },
+            { name: hotel.name, url: absoluteUrl(`/hotels/${hotel.slug}`) },
+          ]),
+        ]}
+      />
       <Header />
 
       {/* ── Blocks, in the owner's order ─────────────────────────────────── */}

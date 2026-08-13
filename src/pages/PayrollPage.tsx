@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowLeft, Banknote, CircleCheck, Loader2, Pencil, Plus, Sparkles, Trash2, Wallet,
+  ArrowLeft, Banknote, CircleCheck, Loader2, Pencil, Plus, Sparkles, Trash2,
+  TriangleAlert, Wallet,
 } from "lucide-react";
 
 import Header from "@/components/Header";
@@ -24,7 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDay, formatMoney } from "@/hooks/use-rent";
 import {
-  HOTEL_STAFF_ROLES, PAY_TYPES, currentMonthInput, monthBounds,
+  HOTEL_STAFF_ROLES, PAY_TYPES, currentMonthInput, monthBounds, roundCents,
   useHotelStaffList, useHotelPayroll, useGenerateMonthlyPayroll,
   useCreatePayrollItem, useUpdatePayrollItem, useDeletePayrollItem,
   type HotelStaff, type PayType, type PayrollItem, type PayrollStatus,
@@ -33,8 +34,15 @@ import {
 const ROLE_LABEL: Record<string, string> = Object.fromEntries(
   HOTEL_STAFF_ROLES.map((r) => [r.value, r.label]),
 );
-const TYPE_LABEL: Record<PayType, string> = Object.fromEntries(
-  PAY_TYPES.map((t) => [t.value, t.label]),
+// Built with a typed reduce rather than Object.fromEntries: fromEntries erases
+// the key union down to `string`, so the result no longer satisfies
+// Record<PayType, string> and every lookup below loses its check.
+const TYPE_LABEL = PAY_TYPES.reduce(
+  (acc, t) => {
+    acc[t.value] = t.label;
+    return acc;
+  },
+  {} as Record<PayType, string>,
 );
 
 type PaymentDialogState =
@@ -54,7 +62,7 @@ const PayrollPage = () => {
   const [month, setMonth] = useState<string>(currentMonthInput());
   const { start, end } = useMemo(() => monthBounds(month), [month]);
 
-  const { data: items, isPending } = useHotelPayroll(start);
+  const { data: items, isPending, isError, refetch } = useHotelPayroll(start);
   const { data: staff } = useHotelStaffList();
   const generate = useGenerateMonthlyPayroll();
   const updatePayment = useUpdatePayrollItem();
@@ -65,14 +73,55 @@ const PayrollPage = () => {
 
   const rows = useMemo(() => (items ?? []), [items]);
 
+  /**
+   * `staff_payroll.amount` is CHECK (amount >= 0), so a row's SIGN lives
+   * entirely in `pay_type`. Summing `amount` blind — which this did — made a
+   * penalty (a deduction) and an advance (cash already fronted against the
+   * salary) both INCREASE the wage bill: salary 400 + advance 100 + penalty 20
+   * reported $520 when the month actually costs $380 and $280 is still owed.
+   *
+   *   salary, bonus → what you owe, positive
+   *   penalty       → a deduction, negative
+   *   advance       → NOT a cost. It's a pre-payment of the salary already
+   *                   counted above, so adding it double-counts. It's tracked
+   *                   on its own tile and taken off what's still owed.
+   *
+   * Cancelled rows are voided and must not move any number — they used to land
+   * in `total` while being excluded from both paid and pending, so the three
+   * tiles silently stopped adding up.
+   */
   const summary = useMemo(() => {
-    let total = 0, paid = 0, pending = 0, paidCount = 0, pendingCount = 0;
+    let total = 0, paid = 0, pending = 0, advanced = 0;
+    let paidCount = 0, pendingCount = 0, advanceCount = 0;
+
     for (const row of rows) {
-      total += row.amount;
-      if (row.status === "paid") { paid += row.amount; paidCount += 1; }
-      else if (row.status === "pending") { pending += row.amount; pendingCount += 1; }
+      if (row.status === "cancelled") continue;
+
+      if (row.payType === "advance") {
+        // Counted whatever the status: operators record an advance when the
+        // cash leaves the till, and the row's status defaults to "pending" and
+        // usually stays there.
+        advanced += row.amount;
+        advanceCount += 1;
+        continue;
+      }
+
+      const signed = row.payType === "penalty" ? -row.amount : row.amount;
+      total += signed;
+      if (row.status === "paid") { paid += signed; paidCount += 1; }
+      else { pending += signed; pendingCount += 1; }
     }
-    return { total, paid, pending, paidCount, pendingCount };
+
+    return {
+      total: roundCents(total),
+      paid: roundCents(paid),
+      pending: roundCents(pending),
+      advanced: roundCents(advanced),
+      // What's genuinely left to hand over: the unsettled wage bill less what
+      // has already gone out as an advance.
+      stillOwed: roundCents(pending - advanced),
+      paidCount, pendingCount, advanceCount,
+    };
   }, [rows]);
 
   const sortedRows = useMemo(
@@ -134,8 +183,18 @@ const PayrollPage = () => {
         </div>
 
         {/* Summary */}
-        <div className="grid grid-cols-3 gap-3">
-          <SummaryTile label="Payroll total" value={formatMoney(summary.total)} accent />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SummaryTile
+            label="Payroll total"
+            value={formatMoney(summary.total)}
+            hint={`${formatMoney(summary.stillOwed)} still owed`}
+            accent
+          />
+          <SummaryTile
+            label={`Already advanced · ${summary.advanceCount}`}
+            value={formatMoney(summary.advanced)}
+            hint="paid out against salary"
+          />
           <SummaryTile
             label={`Pending · ${summary.pendingCount}`}
             value={formatMoney(summary.pending)}
@@ -174,7 +233,9 @@ const PayrollPage = () => {
         </div>
 
         {/* Team with no payment yet */}
-        {!isPending && withoutPayment.length > 0 && (
+        {/* `rows` is empty when the payroll read FAILED too, which would list the
+            whole team here as if nobody had been paid. Only trust it on success. */}
+        {!isPending && !isError && withoutPayment.length > 0 && (
           <section className="space-y-2">
             <h2 className="font-heading font-semibold text-foreground text-sm">
               No payment yet this month
@@ -207,6 +268,23 @@ const PayrollPage = () => {
           <div className="space-y-3">
             {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
           </div>
+        ) : isError ? (
+          /* A failed read used to fall through to "Nothing here yet", which is
+             how a query pointed at a non-existent table passed for an empty
+             month. Broken and empty must never look the same. */
+          <div className="text-center py-14 bg-card rounded-2xl border border-destructive/40">
+            <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-3">
+              <TriangleAlert className="w-7 h-7 text-destructive" />
+            </div>
+            <h2 className="font-heading font-semibold text-foreground mb-1">
+              Payroll couldn't be loaded
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-4">
+              This month's payments didn't come back from the server. Nothing has been lost —
+              the figures above are incomplete until it loads.
+            </p>
+            <Button variant="outline" onClick={() => refetch()}>Try again</Button>
+          </div>
         ) : sortedRows.length === 0 ? (
           <div className="text-center py-14 bg-card rounded-2xl border border-dashed border-border">
             <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
@@ -232,6 +310,11 @@ const PayrollPage = () => {
               <PayrollRow
                 key={row.id}
                 row={row}
+                // One shared mutation drives every row, so gate on the row it's
+                // actually settling — otherwise "Mark paid" stays live during
+                // its own request and a double-tap fires two updates, moving
+                // paid_at and toasting twice.
+                marking={updatePayment.isPending && updatePayment.variables?.id === row.id}
                 onMarkPaid={() => markPaid(row)}
                 onEdit={() => setPaymentDialog({ mode: "edit", payment: row })}
                 onDelete={() => setDeleteTarget(row)}
@@ -291,8 +374,8 @@ const PayrollPage = () => {
 };
 
 function SummaryTile({
-  label, value, accent, green,
-}: { label: string; value: string; accent?: boolean; green?: boolean }) {
+  label, value, hint, accent, green,
+}: { label: string; value: string; hint?: string; accent?: boolean; green?: boolean }) {
   return (
     <div className="bg-card rounded-2xl border border-border p-3">
       <p className="text-[11px] text-muted-foreground truncate">{label}</p>
@@ -304,14 +387,16 @@ function SummaryTile({
       >
         {value}
       </p>
+      {hint && <p className="text-[10px] text-muted-foreground truncate">{hint}</p>}
     </div>
   );
 }
 
 function PayrollRow({
-  row, onMarkPaid, onEdit, onDelete,
+  row, marking, onMarkPaid, onEdit, onDelete,
 }: {
   row: PayrollItem;
+  marking: boolean;
   onMarkPaid: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -350,8 +435,14 @@ function PayrollRow({
         {!cancelled && (
           <div className="mt-1 flex items-center justify-end gap-0.5">
             {!paid && (
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-success" onClick={onMarkPaid}>
-                <CircleCheck className="w-3.5 h-3.5" /> Mark paid
+              <Button
+                variant="ghost" size="sm" className="h-7 px-2 text-xs text-success"
+                onClick={onMarkPaid} disabled={marking}
+              >
+                {marking
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <CircleCheck className="w-3.5 h-3.5" />}
+                Mark paid
               </Button>
             )}
             {!paid && (
@@ -435,17 +526,23 @@ function PaymentDialog({
   const open = state !== null;
   const isEdit = state?.mode === "edit" || false;
 
-  const amount = Number(amountRaw);
-  const amountError =
-    touched && (amountRaw.trim() === "" || !Number.isFinite(amount) || amount <= 0)
-      ? "Enter an amount above 0."
-      : null;
-  const staffError = touched && !staffId ? "Pick who this is for." : null;
+  // Validity comes from the VALUES; `touched` only decides whether it's shown.
+  // Folding `touched` into the predicate made both errors null on the very first
+  // submit — the render that flips touched to true still sees false — so the
+  // guard below waved an empty form through and inserted a $0 payment. With
+  // pay_type "salary" that's worse than noise: it takes the member's slot in the
+  // uq_staff_salary_period index, and "Generate month" then skips them forever.
+  const amount = roundCents(Number(amountRaw));
+  const amountInvalid = amountRaw.trim() === "" || !Number.isFinite(amount) || amount <= 0;
+  const staffInvalid = state?.mode !== "edit" && !staffId;
+
+  const amountError = touched && amountInvalid ? "Enter an amount above 0." : null;
+  const staffError = touched && staffInvalid ? "Pick who this is for." : null;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
-    if (amountError || staffError || !state) return;
+    if (amountInvalid || staffInvalid || !state) return;
 
     if (state.mode === "edit") {
       update.mutate({ id: state.payment.id, patch: { amount, note: note.trim() || null } }, { onSuccess: onClose });
