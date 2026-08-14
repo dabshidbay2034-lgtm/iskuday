@@ -234,6 +234,7 @@ export const STYLE_AXES_FOR: Record<SectionType, StyleAxis[]> = {
   text: ["align", "width", "tone", "pad"],
   gallery: ["layout", "width", "pad"],
   rooms: ["columns", "width", "pad"],
+  menu: ["columns", "width", "pad"],
   cta: ["align", "width", "pad"],
   contact: ["align", "width", "pad"],
   // Containers carry layout, never content.

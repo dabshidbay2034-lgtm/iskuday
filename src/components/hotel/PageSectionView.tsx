@@ -460,6 +460,90 @@ export function PageSectionView({
         </section>
       );
 
+    case "menu": {
+      const items = section.items ?? [];
+      return (
+        <section
+          className={cn(
+            "container scroll-mt-20",
+            pick(section.width, (w) => blockWidthClass(w), "max-w-5xl"),
+            pick(section.pad, (p) => padClass(p), "py-10"),
+          )}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <EditableText
+              mode={mode}
+              as="h2"
+              className="font-heading font-bold text-xl md:text-2xl text-foreground"
+              value={section.title ?? ""}
+              placeholder="Menu"
+              onCommit={(v) => patch({ title: v })}
+            >
+              {section.title || "Menu"}
+            </EditableText>
+            <EditableText
+              mode={mode}
+              as="span"
+              className="text-xs text-muted-foreground hidden sm:block"
+              value={section.subtitle ?? ""}
+              placeholder="Subtitle"
+              onCommit={(v) => patch({ subtitle: v })}
+            />
+          </div>
+
+          {items.length === 0 ? (
+            <div className="text-center py-12 rounded-2xl bg-card border border-dashed border-border">
+              <ImagePlus className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-muted-foreground text-sm">
+                No menu items yet — add some from the panel.
+              </p>
+            </div>
+          ) : (
+            <div className={pick(section.columns, roomColumnsClass, "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4")}>
+              {items.map((item) => (
+                <div
+                  key={item.id}
+                  className="overflow-hidden rounded-2xl bg-card border border-border shadow-card hover:shadow-elevated transition-shadow"
+                >
+                  <div className="relative aspect-[4/3] overflow-hidden">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div
+                        className="w-full h-full flex items-center justify-center"
+                        style={{ background: `linear-gradient(135deg, ${accent}44, transparent)` }}
+                      >
+                        <ImagePlus className="w-10 h-10 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <p className="font-medium text-foreground text-sm truncate">{item.name}</p>
+                    {item.category && (
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">{item.category}</p>
+                    )}
+                    {item.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2 mt-2">{item.description}</p>
+                    )}
+                    <div className="flex items-center justify-between mt-3">
+                      <p className="text-foreground font-heading font-bold">
+                        <span style={{ color: accent }}>{formatMoney(item.price)}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      );
+    }
+
     case "cta":
       if (!isEdit && !section.heading && !section.buttonLabel) return null;
       return (

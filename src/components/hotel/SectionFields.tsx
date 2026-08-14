@@ -1,11 +1,12 @@
-import { ImagePlus, Loader2, X } from "lucide-react";
+import { ImagePlus, Loader2, X, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { PageSection } from "@/components/hotel/page-sections";
+import type { PageSection, MenuItem } from "@/components/hotel/page-sections";
+import { uid } from "@/components/hotel/page-sections";
 import {
   ALIGN_OPTIONS, GALLERY_LAYOUT_OPTIONS, HERO_HEIGHT_OPTIONS, OVERLAY_OPTIONS,
   GAP_OPTIONS, PAD_OPTIONS, ROOM_COLUMN_OPTIONS, STYLE_AXES_FOR, TONE_OPTIONS, WIDTH_OPTIONS,
@@ -265,6 +266,27 @@ function ContentFields({
         </>
       );
 
+    case "menu":
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Section title</Label>
+            <Input value={section.title ?? "Menu"} onChange={(e) => onUpdate({ title: e.target.value })} className={inputCls} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Subtitle</Label>
+            <Input value={section.subtitle ?? ""} onChange={(e) => onUpdate({ subtitle: e.target.value })} className={inputCls} />
+          </div>
+          <MenuItemsEditor
+            items={section.items ?? []}
+            uploading={uploading}
+            onUpdate={onUpdate}
+            upload={upload}
+            onQueueDelete={onQueueDelete}
+          />
+        </>
+      );
+
     case "cta":
       return (
         <>
@@ -338,6 +360,176 @@ function UploadField({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Menu items editor for the menu section. */
+function MenuItemsEditor({
+  items, uploading, onUpdate, upload, onQueueDelete,
+}: {
+  items: MenuItem[];
+  uploading: boolean;
+  onUpdate: (patch: Partial<PageSection>) => void;
+  upload: (files: FileList | null, field: "imageUrl" | "images") => Promise<void>;
+  onQueueDelete: (urls: string[]) => void;
+}) {
+  const inputCls = "h-9 rounded-lg text-sm bg-background";
+
+  const updateItem = (id: string, patch: Partial<MenuItem>) => {
+    onUpdate({
+      items: items.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    });
+  };
+
+  const deleteItem = (id: string) => {
+    const item = items.find((i) => i.id === id);
+    if (item?.imageUrl) onQueueDelete([item.imageUrl]);
+    onUpdate({ items: items.filter((i) => i.id !== id) });
+  };
+
+  const addItem = () => {
+    const newItem: MenuItem = { id: uid(), name: "", price: 0 };
+    onUpdate({ items: [...items, newItem] });
+  };
+
+  return (
+    <div className="space-y-3 pt-4 border-t border-border">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Menu Items
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-[11px]"
+          onClick={addItem}
+        >
+          <Plus className="w-3 h-3" /> Add item
+        </Button>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+          No items yet. Click "Add item" to start building your menu.
+        </p>
+      ) : (
+        <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-lg border border-border bg-muted/30 p-3 space-y-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <Input
+                    value={item.name}
+                    onChange={(e) => updateItem(item.id, { name: e.target.value })}
+                    placeholder="Item name (e.g., Chicken Biryani)"
+                    className={cn(inputCls, "font-medium")}
+                  />
+                  <Input
+                    value={item.category ?? ""}
+                    onChange={(e) => updateItem(item.id, { category: e.target.value })}
+                    placeholder="Category (e.g., Main course)"
+                    className={inputCls}
+                  />
+                  <Textarea
+                    value={item.description ?? ""}
+                    onChange={(e) => updateItem(item.id, { description: e.target.value })}
+                    placeholder="Description (optional)"
+                    className="rounded-lg text-sm min-h-[48px]"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Price:</Label>
+                    <Input
+                      type="number"
+                      value={item.price}
+                      onChange={(e) => updateItem(item.id, { price: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                      className={cn(inputCls, "flex-1")}
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={() => deleteItem(item.id)}
+                  aria-label={`Delete ${item.name}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+
+              {/* Image upload */}
+              <div className="flex items-center gap-3">
+                {item.imageUrl ? (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.name}
+                    className="w-20 h-20 rounded-lg object-cover border border-border"
+                  />
+                ) : (
+                  <div className="w-20 h-20 rounded-lg border border-dashed border-border flex items-center justify-center text-muted-foreground">
+                    <ImagePlus className="w-5 h-5" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    className={cn(
+                      "inline-flex items-center justify-center gap-1 rounded-lg border border-border px-3 h-8 text-xs font-medium cursor-pointer hover:border-accent/60",
+                      uploading && "opacity-60 pointer-events-none",
+                    )}
+                  >
+                    {uploading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <ImagePlus className="w-3.5 h-3.5" />
+                    )}
+                    {item.imageUrl ? "Replace" : "Upload"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) {
+                          const reader = new FileReader();
+                          reader.onload = async (event) => {
+                            const dataUrl = event.target?.result as string;
+                            if (item.imageUrl) onQueueDelete([item.imageUrl]);
+                            updateItem(item.id, { imageUrl: dataUrl });
+                          };
+                          reader.readAsDataURL(e.target.files[0]);
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {item.imageUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs text-destructive"
+                      onClick={() => {
+                        if (item.imageUrl) onQueueDelete([item.imageUrl]);
+                        updateItem(item.id, { imageUrl: null });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

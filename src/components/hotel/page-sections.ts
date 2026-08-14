@@ -33,7 +33,7 @@ import type {
  */
 
 /** Blocks that render content. A leaf can never contain anything. */
-export type LeafSectionType = "hero" | "text" | "gallery" | "rooms" | "cta" | "contact";
+export type LeafSectionType = "hero" | "text" | "gallery" | "rooms" | "menu" | "cta" | "contact";
 
 /** Blocks that exist only to hold other blocks. */
 export type ContainerSectionType = "row" | "column";
@@ -41,8 +41,17 @@ export type ContainerSectionType = "row" | "column";
 export type SectionType = LeafSectionType | ContainerSectionType;
 
 export const LEAF_SECTION_TYPES: LeafSectionType[] = [
-  "hero", "text", "gallery", "rooms", "cta", "contact",
+  "hero", "text", "gallery", "rooms", "menu", "cta", "contact",
 ];
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  imageUrl?: string | null;
+  category?: string;
+}
 
 /** A single editable block. Flat + optional fields so editors are uniform. */
 export interface PageSection {
@@ -60,8 +69,10 @@ export interface PageSection {
   /** gallery */
   title?: string;
   images?: string[];
-  /** rooms */
+  /** rooms & menu */
   subtitle?: string;
+  /** menu */
+  items?: MenuItem[];
   /** cta */
   buttonLabel?: string;
   buttonHref?: string;
@@ -113,6 +124,7 @@ export const SECTION_META: Record<
   text: { label: "Text", Icon: AlignLeft, hint: "A heading and a paragraph." },
   gallery: { label: "Gallery", Icon: ImageIcon, hint: "A sliding photo carousel." },
   rooms: { label: "Rooms", Icon: BedDouble, hint: "Your featured rooms with nightly rates." },
+  menu: { label: "Menu", Icon: ImageIcon, hint: "Food & drinks with prices and photos." },
   cta: { label: "Button", Icon: Megaphone, hint: "A highlight band with a button." },
   contact: { label: "Contact", Icon: Phone, hint: "Phone, WhatsApp, map and socials." },
   row: { label: "Columns", Icon: Columns3, hint: "Blocks side by side — stacked on phones." },
@@ -126,7 +138,7 @@ export const SECTION_META: Record<
  * so owners get columns by adding a row, never by placing a stray one.
  */
 export const SECTION_ORDER: SectionType[] = [
-  "hero", "text", "gallery", "rooms", "cta", "contact", "row",
+  "hero", "text", "gallery", "rooms", "menu", "cta", "contact", "row",
 ];
 
 /* ── Tree shape rules ──────────────────────────────────────────────────────── */
@@ -375,6 +387,8 @@ export function newSection(type: SectionType): PageSection {
       return { ...base, title: "Gallery", images: [] };
     case "rooms":
       return { ...base, title: "Rooms & rates", subtitle: "Nightly · book through Mogadishu Rents" };
+    case "menu":
+      return { ...base, title: "Menu", subtitle: "Food & Drinks", items: [] };
     case "cta":
       return { ...base, heading: "", buttonLabel: "Book now", buttonHref: "#contact" };
     case "contact":
