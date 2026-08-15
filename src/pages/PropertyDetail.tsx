@@ -14,16 +14,17 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft, MapPin, Bed, Bath, Car, Cctv, Building2, Waves,
-  Sofa, CookingPot, DollarSign, Shield, User, Phone, Mail, Calendar, Home, Hotel, Eye, MessageCircle, Armchair, CalendarClock,
+  Sofa, CookingPot, DollarSign, Shield, User, Phone, Mail, Calendar, Home, Hotel, MessageCircle, Armchair, CalendarClock,
   Wifi, Coffee, PlaneTakeoff, Briefcase, Users, Sparkles, ShieldCheck, CarFront, Utensils, Sun,
   UtensilsCrossed, Bus, Landmark, Clock, CheckCircle2, Wind, Shirt,
   Snowflake, Laptop, ConciergeBell, Refrigerator, Tv, MonitorPlay, ShowerHead, Vault,
-  Phone as PhoneIcon, Crown, GlassWater, Droplets, SprayCan,
+  Phone as PhoneIcon, Crown, GlassWater, Droplets, SprayCan, ArrowUpDown,
 } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { useAppAuth } from "@/hooks/use-auth";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
+import { PERMISSIONS } from "@/lib/permissions";
 import { propertyTypeClass, propertyTypeLabel, purposeLabel, purposeClass } from "@/lib/property-display";
 import { isBookableType, isNightlyRateType } from "@/lib/property-kind";
 import { useRoomBookedRanges, bookedUntil, formatBookedUntil } from "@/hooks/use-room-availability";
@@ -31,7 +32,7 @@ import { useRoomBookedRanges, bookedUntil, formatBookedUntil } from "@/hooks/use
 const PropertyDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { userId: currentUserId, appRole } = useAppAuth();
+  const { userId: currentUserId, appRole, can } = useAppAuth();
   const isAdmin = appRole === "admin";
   const isSemiAdmin = appRole === "semi_admin";
 
@@ -73,6 +74,14 @@ const PropertyDetail = () => {
     },
     enabled: !!id,
   });
+
+  const canSeePrivateViewStats = Boolean(
+    property &&
+      (currentUserId === property.owner_id ||
+        isAdmin ||
+        isSemiAdmin ||
+        can(PERMISSIONS.ANALYTICS_VIEW)),
+  );
 
   const { data: owner } = useQuery({
     queryKey: ["property-owner", property?.owner_id],
@@ -199,7 +208,7 @@ const PropertyDetail = () => {
     property.has_cctv && { icon: Cctv, label: "CCTV Security", color: "bg-destructive/10 text-destructive" },
     property.has_parking && { icon: Car, label: "Parking Available", color: "bg-success/10 text-success" },
     property.is_furnished && { icon: Armchair, label: "Furnished", color: "bg-primary/10 text-primary" },
-    property.has_elevator && { icon: () => <span role="img" aria-label="Elevator">🛗</span>, label: "Elevator", color: "bg-primary/10 text-primary" },
+    property.has_elevator && { icon: ArrowUpDown, label: "Elevator", color: "bg-primary/10 text-primary" },
     // Hotel amenities (20260902000002)
     property.has_free_wifi && { icon: Wifi, label: "Free WiFi", color: "bg-info/10 text-info" },
     property.has_coffee_shop && { icon: Coffee, label: "Coffee Shop", color: "bg-warning/10 text-warning" },
@@ -416,16 +425,16 @@ const PropertyDetail = () => {
               )}
             </div>
 
-            {/* Posted date and views */}
+            {/* Posted date; view totals stay private to owners/managers only */}
             <div className="flex items-center justify-between text-xs text-muted-foreground mt-6 pt-4 border-t border-border/50">
               <div className="flex items-center gap-2">
                 <Calendar className="w-3.5 h-3.5" />
                 Listed {new Date(property.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
               </div>
-              {currentUserId && (currentUserId === property.owner_id || isAdmin || isSemiAdmin) && (
-                <div className="flex items-center gap-2">
-                  <Eye className="w-3.5 h-3.5" />
-                  {property.views || 0} views
+              {canSeePrivateViewStats && (
+                <div className="text-right">
+                  <span className="font-medium text-foreground">{property.views || 0}</span>
+                  <span className="ml-1">private views</span>
                 </div>
               )}
             </div>

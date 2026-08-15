@@ -16,7 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "sonner";
 import {
-  Edit, Trash2, Eye, EyeOff, Shield, AlertTriangle, Users, CheckCircle, XCircle, Building,
+  Edit, Trash2, EyeOff, Shield, AlertTriangle, Users, CheckCircle, XCircle, Building,
   Search, UserCheck, UserX, Phone, Filter, Wallet
 } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
@@ -331,7 +331,6 @@ const Admin = () => {
                         <th className="p-4">Owner</th>
                         <th className="p-4">Type</th>
                         <th className="p-4">Price</th>
-                        <th className="p-4">Views</th>
                         <th className="p-4">Status</th>
                         <th className="p-4">Actions</th>
                       </tr>
@@ -355,12 +354,6 @@ const Admin = () => {
                           <td className="p-4">
                             <div className="font-medium">${property.price?.toLocaleString()}{property.is_daily_rate ? "/day" : "/month"}</div>
                             <div className="text-sm text-muted-foreground">Deposit: ${property.deposit?.toLocaleString()}</div>
-                          </td>
-                          <td className="p-4">
-                            <div className="flex items-center gap-1.5">
-                              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span className="font-medium">{property.views || 0}</span>
-                            </div>
                           </td>
                           <td className="p-4">
                             <div className="flex flex-col gap-1">

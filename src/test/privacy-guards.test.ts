@@ -111,6 +111,20 @@ describe('phone privacy', () => {
     ).toEqual([]);
   });
 
+  it('does not render public view totals on the property detail page', () => {
+    const file = join(SRC, 'pages/PropertyDetail.tsx');
+    const src = read(file);
+    const offenders = [
+      /property\.views\s*\|\|\s*0\s*\}\s*views/i,
+      /views\s*\}/i,
+    ].filter((pattern) => pattern.test(src));
+
+    expect(
+      offenders,
+      'Anonymous visitors must never see the listing view total on the public property page.',
+    ).toEqual([]);
+  });
+
   it('does not reference profiles.phone / phone2 / phone3 anywhere', () => {
     const offenders: string[] = [];
 

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Eye, Shield, AlertTriangle, Users, Building,
+  Shield, AlertTriangle, Users, Building,
   Search, UserCheck, UserX, Phone, Filter, EyeIcon
 } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
@@ -247,7 +247,6 @@ const SemiAdmin = () => {
                         <th className="p-4">Owner</th>
                         <th className="p-4">Type</th>
                         <th className="p-4">Price</th>
-                        <th className="p-4">Views</th>
                         <th className="p-4">Status</th>
                       </tr>
                     </thead>
@@ -270,12 +269,6 @@ const SemiAdmin = () => {
                           <td className="p-4">
                             <div className="font-medium">${property.price?.toLocaleString()}{property.is_daily_rate ? "/day" : "/month"}</div>
                             <div className="text-sm text-muted-foreground">Deposit: ${property.deposit?.toLocaleString()}</div>
-                          </td>
-                          <td className="p-4">
-                            <div className="flex items-center gap-1.5">
-                              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span className="font-medium">{property.views || 0}</span>
-                            </div>
                           </td>
                           <td className="p-4">
                             <div className="flex flex-col gap-1">

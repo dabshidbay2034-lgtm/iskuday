@@ -83,6 +83,10 @@ const Dashboard = () => {
   });
 
   const isPendingVerification = !userRole?.is_verified;
+  const canSeePrivateViewStats = Boolean(
+    userId &&
+      (platformRole === "owner" || platformRole === "hotel_manager" || platformRole === "admin" || platformRole === "semi_admin"),
+  );
 
   const { data: properties, isLoading: propsLoading } = useQuery({
     queryKey: ["my-properties", userId],
@@ -245,7 +249,7 @@ const Dashboard = () => {
           {[
             { label: "Listings", value: properties?.length ?? 0, color: "text-accent" },
             { label: "Active", value: properties?.filter((p: { is_available: boolean }) => p.is_available).length ?? 0, color: "text-primary" },
-            { label: "Views", value: properties?.reduce((sum: number, p: { views?: number }) => sum + (p.views || 0), 0) ?? 0, color: "text-info" },
+            ...(canSeePrivateViewStats ? [{ label: "Private views", value: properties?.reduce((sum: number, p: { views?: number }) => sum + (p.views || 0), 0) ?? 0, color: "text-info" }] : []),
           ].map((s) => (
             <div key={s.label} className="p-4 rounded-xl bg-card border border-border shadow-card text-center">
               <p className={`text-2xl font-heading font-bold ${s.color}`}>{s.value}</p>
@@ -337,9 +341,11 @@ const Dashboard = () => {
                       <p className="text-sm font-heading font-bold text-accent">
                         ${p.price.toLocaleString()}<span className="text-[10px] text-muted-foreground font-normal">/{p.is_daily_rate ? "night" : "mo"}</span>
                       </p>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Eye className="w-3 h-3" /> {p.views || 0}
-                      </p>
+                      {canSeePrivateViewStats && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Eye className="w-3 h-3" /> {p.views || 0}
+                        </p>
+                      )}
                     </div>
                   </div>
 
