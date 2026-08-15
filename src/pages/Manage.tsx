@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { BedDouble, Building2, ChevronRight, Globe, Home, Plus, Users, Wallet } from "lucide-react";
+import { BedDouble, Building2, ChevronRight, Globe, Home, Plus, Users, Wallet, BarChart3, Clock } from "lucide-react";
 
 import { useAppAuth } from "@/hooks/use-auth";
 import { useMyHotelIds } from "@/hooks/use-hotel-invites";
-import { canManageHotelPages } from "@/lib/account-type";
+import { accountKind, canManageHotelPages } from "@/lib/account-type";
 import { PERMISSIONS } from "@/lib/permissions";
 import {
   buildPortfolioSummary,
@@ -63,6 +63,8 @@ type OccupancyFilter = "all" | OccupancyStatus;
  */
 const Manage = () => {
   const { isLoaded, isSignedIn, can, platformRole } = useAppAuth();
+  // A hotel calls its units rooms. Same portfolio, different vocabulary.
+  const isHotelAccount = accountKind(platformRole) === "hotel";
   const scope = useManageScope();
   const properties = useOrgProperties();
   // The rent query is keyed on the portfolio's property ids, so it waits for the
@@ -193,6 +195,16 @@ const Manage = () => {
                                             <Wallet className="w-4 h-4" /> Payroll
                                           </Link>
                                         </Button>
+                                        <Button variant="outline" size="sm" asChild>
+                                          <Link to="/manage/attendance">
+                                            <Clock className="w-4 h-4" /> Attendance
+                                          </Link>
+                                        </Button>
+                                        <Button variant="outline" size="sm" asChild>
+                                          <Link to="/manage/analytics">
+                                            <BarChart3 className="w-4 h-4" /> Analytics
+                                          </Link>
+                                        </Button>
                                       </div>
                                     )}
       </div>
@@ -202,15 +214,19 @@ const Manage = () => {
       {rows.length === 0 ? (
         <EmptyCard
           icon={Home}
-          title="No properties yet"
-          body="List your first unit and it will show up here with its rent ledger and utility bills."
+          title={isHotelAccount ? "No rooms yet" : "No properties yet"}
+          body={
+            isHotelAccount
+              ? "Add your first room and it will show up here with its bookings and housekeeping."
+              : "List your first unit and it will show up here with its rent ledger and utility bills."
+          }
           action={
             // A solo owner has no org role to check — listing their own unit is
             // exactly what this page exists for.
             scope.isSoloScope || can(PERMISSIONS.PROPERTY_EDIT) ? (
               <Button variant="hero" asChild>
                 <Link to="/add-property">
-                  <Plus className="w-4 h-4" /> Add a property
+                  <Plus className="w-4 h-4" /> {isHotelAccount ? "Add a room" : "Add a property"}
                 </Link>
               </Button>
             ) : null
@@ -220,7 +236,7 @@ const Manage = () => {
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-heading font-semibold text-foreground">
-              Units{" "}
+              {isHotelAccount ? "Rooms" : "Units"}{" "}
               <span className="text-xs font-normal text-muted-foreground">
                 ({visible.length} of {rows.length})
               </span>
@@ -240,7 +256,7 @@ const Manage = () => {
           {visible.length === 0 ? (
             <div className="text-center py-12 bg-card rounded-xl border border-border">
               <p className="text-sm text-muted-foreground">
-                No {filter} units. Change the filter to see the rest of your portfolio.
+                No {filter} {isHotelAccount ? "rooms" : "units"}. Change the filter to see the rest of your portfolio.
               </p>
             </div>
           ) : (

@@ -1,9 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
-import { Bed, Bath, Car, Cctv, Building2, MapPin, Heart, Armchair, Building } from "lucide-react";
+import { Bed, Bath, Car, Cctv, Building2, MapPin, Heart, Armchair, Building, CalendarClock, Snowflake, Wifi, Refrigerator } from "lucide-react";
 import { toast } from "sonner";
 import type { Property } from "@/lib/types";
-import { propertyTypeClass, propertyTypeLabel } from "@/lib/property-display";
+import { propertyTypeClass, propertyTypeLabel, purposeLabel, purposeClass } from "@/lib/property-display";
+import { formatBookedUntil } from "@/hooks/use-room-availability";
 
 interface PropertyCardProps {
   property: Property;
@@ -11,9 +12,18 @@ interface PropertyCardProps {
   isFavorite?: boolean;
   onToggleFavorite?: (id: string) => void;
   isAuthenticated?: boolean;
+  /**
+   * For nightly units only: the ISO date a confirmed stay ends, or null/absent
+   * when the room is free tonight.
+   *
+   * This is a BADGE, not a filter. A booked hotel room or BnB stays in the
+   * listings because it is still bookable for later dates — the badge says
+   * when it frees up rather than the listing disappearing.
+   */
+  bookedUntil?: string | null;
 }
 
-const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthenticated }: PropertyCardProps) => {
+const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthenticated, bookedUntil }: PropertyCardProps) => {
   const navigate = useNavigate();
 
   const handleFavorite = (e: React.MouseEvent) => {
@@ -57,9 +67,22 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
           <Badge className={`${propertyTypeClass(property.type)} border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm`}>
             {propertyTypeLabel(property.type)}
           </Badge>
+          {property.purpose === "sell" && (
+            <Badge className="bg-warning/90 backdrop-blur-sm text-warning-foreground border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm">
+              For Sale
+            </Badge>
+          )}
           {property.is_furnished && (
             <Badge className="bg-card/90 backdrop-blur-sm text-foreground border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm flex items-center gap-1">
               <Armchair className="w-3 h-3" /> Furnished
+            </Badge>
+          )}
+          {/* Taken tonight, free afterwards. Worded as a date rather than
+              "Unavailable" precisely because the listing is still live and the
+              guest can book from that day on. */}
+          {bookedUntil && (
+            <Badge className="bg-foreground/85 backdrop-blur-sm text-background border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm flex items-center gap-1">
+              <CalendarClock className="w-3 h-3" /> Booked till {formatBookedUntil(bookedUntil)}
             </Badge>
           )}
         </div>
@@ -124,6 +147,21 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
               <Cctv className="w-3.5 h-3.5" /> CCTV
             </span>
           )}
+          {property.has_air_conditioning && (
+            <span className="flex items-center gap-1">
+              <Snowflake className="w-3.5 h-3.5" /> AC
+            </span>
+          )}
+          {property.has_free_wifi && (
+            <span className="flex items-center gap-1">
+              <Wifi className="w-3.5 h-3.5" /> WiFi
+            </span>
+          )}
+          {property.has_refrigerator && (
+            <span className="flex items-center gap-1">
+              <Refrigerator className="w-3.5 h-3.5" /> Fridge
+            </span>
+          )}
           {property.floor_number != null && (
             <span className="flex items-center gap-1">
               <Building2 className="w-3.5 h-3.5" /> Floor {property.floor_number}
@@ -137,7 +175,7 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
             ${property.price.toLocaleString()}
           </span>
           <span className="text-muted-foreground text-xs">
-            / {property.is_daily_rate ? "night" : "month"}
+            {property.purpose === "sell" ? "one-time" : `/ ${property.is_daily_rate ? "night" : "month"}`}
           </span>
           <span className="text-muted-foreground text-xs ml-auto">
             Deposit ${property.deposit.toLocaleString()}

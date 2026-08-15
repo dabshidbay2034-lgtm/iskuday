@@ -47,6 +47,12 @@ export type Hotel = {
   contactWhatsapp: string | null;
   contactEmail: string | null;
   address: string | null;
+  /**
+   * The one district this hotel is in. Chosen once in page settings; every
+   * room inherits it instead of being asked again. NULL until the owner picks
+   * one — the add-room flow blocks on that rather than guessing.
+   */
+  district: string | null;
   mapsUrl: string | null;
   socials: HotelSocials;
   /** The ordered blocks the public page renders (hero → … → contact). */
@@ -91,6 +97,7 @@ type RawHotel = {
   contact_whatsapp: string | null;
   contact_email: string | null;
   address: string | null;
+  district: string | null;
   maps_url: string | null;
   socials: Record<string, string> | null;
   sections?: unknown;
@@ -124,6 +131,7 @@ function toHotel(row: RawHotel): Hotel {
     contactWhatsapp: row.contact_whatsapp ?? null,
     contactEmail: row.contact_email ?? null,
     address: row.address ?? null,
+    district: row.district ?? null,
     mapsUrl: row.maps_url ?? null,
     socials: row.socials ?? {},
     isPublished: row.is_published ?? false,
@@ -135,6 +143,45 @@ function toHotel(row: RawHotel): Hotel {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LooseClient = { from: (table: string) => any };
 const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
+
+/**
+ * True when the write was rejected only because `hotels.district` isn't there
+ * yet.
+ *
+ * ── TWO CODES, NOT ONE ─────────────────────────────────────────────────────
+ * The obvious check is Postgres 42703 (undefined_column), and that is wrong on
+ * its own. A write through supabase-js never reaches Postgres: PostgREST
+ * validates the payload against its own cached schema first and rejects it as
+ * PGRST204 — "Could not find the 'district' column of 'hotels' in the schema
+ * cache". 42703 is what a raw `select` of the column returns. Both mean the
+ * same thing here, and matching only the first one silently does nothing,
+ * which is how this was caught: the save still failed.
+ *
+ * Note PostgREST caches the schema, so even after the migration runs the cache
+ * may need a moment (or `NOTIFY pgrst, 'reload schema'`) before writes take
+ * the column.
+ *
+ * ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+ * The district column arrives in 20260818000001_hotel_district.sql. The client
+ * ships independently of the database, so between deploying this code and
+ * applying that migration the payload names a column that does not exist —
+ * and PostgREST rejects the ENTIRE statement, not just the unknown field. The
+ * effect would be that saving a hotel page, which works today, stops working
+ * until someone runs the migration.
+ *
+ * Breaking a working feature to add a new one is not an acceptable trade, so
+ * the write retries once without the field. The district silently doesn't
+ * persist until the migration lands, which is the correct degradation: the
+ * feature is unavailable, rather than the page being unsaveable.
+ *
+ * DELETE THIS once 20260818000001 is applied everywhere — it is scaffolding,
+ * not architecture, and it would mask a genuine schema drift if left forever.
+ */
+function isMissingDistrictColumn(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  const code = e?.code ?? "";
+  return (code === "42703" || code === "PGRST204") && /district/i.test(e?.message ?? "");
+}
 
 // ── Slugs ────────────────────────────────────────────────────────────────────
 
@@ -304,6 +351,8 @@ export type HotelFormInput = {
   contactWhatsapp?: string;
   contactEmail?: string;
   address?: string;
+  /** One of MOGADISHU_DISTRICTS. "" clears it back to unset. */
+  district?: string;
   mapsUrl?: string;
   socials?: HotelSocials;
   /** The ordered page blocks. When set, the scalar fields below are mirrored from it. */
@@ -343,8 +392,7 @@ export function useCreateHotel() {
         });
       const scalars = scalarsFromSections(sections, name);
 
-      const { data, error } = await looseFrom("hotels")
-        .insert({
+      const payload = {
           owner_id: userId,
           org_id: orgId ?? null,
           slug,
@@ -359,13 +407,18 @@ export function useCreateHotel() {
           contact_whatsapp: input.contactWhatsapp?.trim() || null,
           contact_email: input.contactEmail?.trim() || null,
           address: input.address?.trim() || null,
+          district: input.district?.trim() || null,
           maps_url: input.mapsUrl?.trim() || null,
           socials: input.socials ?? {},
           sections,
           is_published: input.isPublished ?? false,
-        })
-        .select("*")
-        .single();
+      };
+
+      let { data, error } = await looseFrom("hotels").insert(payload).select("*").single();
+      if (error && isMissingDistrictColumn(error)) {
+        const { district: _unused, ...withoutDistrict } = payload;
+        ({ data, error } = await looseFrom("hotels").insert(withoutDistrict).select("*").single());
+      }
       if (error) throw error;
       return toHotel(data as RawHotel);
     },
@@ -389,8 +442,7 @@ export function useUpdateHotel() {
       const sections = input.sections ?? [];
       const scalars = scalarsFromSections(sections, name);
 
-      const { data, error } = await looseFrom("hotels")
-        .update({
+      const payload = {
           name,
           hero_image_url: scalars.hero_image_url,
           tagline: scalars.tagline,
@@ -402,14 +454,20 @@ export function useUpdateHotel() {
           contact_whatsapp: input.contactWhatsapp?.trim() || null,
           contact_email: input.contactEmail?.trim() || null,
           address: input.address?.trim() || null,
+          district: input.district?.trim() || null,
           maps_url: input.mapsUrl?.trim() || null,
           socials: input.socials ?? {},
           sections,
           is_published: input.isPublished ?? false,
-        })
-        .eq("id", id)
-        .select("*")
-        .single();
+      };
+
+      let { data, error } = await looseFrom("hotels")
+        .update(payload).eq("id", id).select("*").single();
+      if (error && isMissingDistrictColumn(error)) {
+        const { district: _unused, ...withoutDistrict } = payload;
+        ({ data, error } = await looseFrom("hotels")
+          .update(withoutDistrict).eq("id", id).select("*").single());
+      }
       if (error) throw error;
       return toHotel(data as RawHotel);
     },
@@ -481,6 +539,55 @@ export function useSetHotelRooms(hotelId?: string) {
     },
     onError: (error: unknown) =>
       toast.error(describeWriteError(error, "Couldn't update the featured rooms")),
+  });
+}
+
+/**
+ * Attach ONE room to a hotel page, keeping the rooms already there.
+ *
+ * `useSetHotelRooms` above is the builder's curation control: it replaces the
+ * whole list, which is right when the owner has just ticked checkboxes against
+ * the full set. It is exactly wrong for the add-room wizard, which knows about
+ * one new room and nothing about the others — calling it there would delete
+ * every previously featured room.
+ *
+ * Appends at the end (`max(sort_order) + 1`) so the builder's manual ordering
+ * survives, and ignores a duplicate rather than failing: attaching a room that
+ * is already attached is a no-op, not an error.
+ */
+export function useAttachHotelRoom() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (args: { hotelId: string; propertyId: string }) => {
+      const { hotelId, propertyId } = args;
+
+      const { data: last, error: readError } = await looseFrom("hotel_rooms")
+        .select("sort_order")
+        .eq("hotel_id", hotelId)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (readError) throw readError;
+
+      const { error } = await looseFrom("hotel_rooms").upsert(
+        {
+          hotel_id: hotelId,
+          property_id: propertyId,
+          sort_order: Number(last?.sort_order ?? -1) + 1,
+        },
+        { onConflict: "hotel_id,property_id", ignoreDuplicates: true },
+      );
+      if (error) throw error;
+      return { hotelId, propertyId };
+    },
+    onSuccess: ({ hotelId }) => {
+      queryClient.invalidateQueries({ queryKey: hotelRoomsKey(hotelId) });
+      queryClient.invalidateQueries({ queryKey: myHotelsKey() });
+    },
+    // Deliberately quiet on failure: the caller creates the room first, and a
+    // room that exists but isn't featured yet is a far smaller problem than a
+    // scary toast implying the room wasn't saved. The caller says so instead.
   });
 }
 

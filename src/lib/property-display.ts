@@ -31,6 +31,7 @@ const TYPE_ALIASES: Record<string, PropertyDisplayType> = {
   villa: "house", // the database enum's name for the same thing
   apartment: "apartment",
   hotel: "hotel",
+  bnb: "bnb",
   commercial: "commercial",
 };
 
@@ -38,6 +39,9 @@ const TYPE_COLORS: Record<PropertyDisplayType, string> = {
   house: "bg-success text-success-foreground",
   apartment: "bg-info text-info-foreground",
   hotel: "bg-hotel text-hotel-foreground",
+  // Distinct from `hotel` on purpose: both are nightly, but a renter scanning a
+  // list needs to tell "a room in a hotel" from "someone's short-let flat".
+  bnb: "bg-accent text-accent-foreground",
   commercial: "bg-warning text-warning-foreground",
 };
 
@@ -45,6 +49,7 @@ const TYPE_LABELS: Record<PropertyDisplayType, string> = {
   house: "House",
   apartment: "Apartment",
   hotel: "Hotel",
+  bnb: "BnB",
   commercial: "Commercial",
 };
 
@@ -65,4 +70,16 @@ export const propertyTypeLabel = (type: string | null | undefined): string => {
   // fallback dropped the raw lowercase enum next to properly-cased siblings.
   if (!type) return "Property";
   return type.charAt(0).toUpperCase() + type.slice(1);
+};
+
+/** Human label for listing purpose: "For Rent" or "For Sale". */
+export const purposeLabel = (purpose: string | null | undefined): string => {
+  if (purpose === "sell") return "For Sale";
+  return "For Rent";
+};
+
+/** Badge colour for the listing purpose. */
+export const purposeClass = (purpose: string | null | undefined): string => {
+  if (purpose === "sell") return "bg-warning/15 text-warning border-warning/20";
+  return "bg-primary/10 text-primary border-primary/20";
 };

@@ -27,6 +27,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ProfileSettings = lazy(() => import("./pages/ProfileSettings"));
 const Saved = lazy(() => import("./pages/Saved"));
 const Admin = lazy(() => import("./pages/Admin"));
+const Showcase = lazy(() => import("./pages/Showcase"));
 const SemiAdmin = lazy(() => import("./pages/SemiAdmin"));
 const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
@@ -42,6 +43,8 @@ const ManageHotels = lazy(() => import("./pages/ManageHotels"));
 const EditHotel = lazy(() => import("./pages/EditHotel"));
 const StaffManager = lazy(() => import("./pages/StaffManager"));
 const PayrollPage = lazy(() => import("./pages/PayrollPage"));
+const StaffAttendance = lazy(() => import("./pages/StaffAttendance"));
+const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
 const Services = lazy(() => import("./pages/Services"));
 const AdminServices = lazy(() => import("./pages/AdminServices"));
 const AgencyProfile = lazy(() => import("./pages/AgencyProfile"));
@@ -107,6 +110,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/about" element={<About />} />
+            <Route path="/showcase" element={<Showcase />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/properties" element={<Properties />} />
             {/* Splat routes are required: Clerk's path-based routing renders its
@@ -179,6 +183,8 @@ const App = () => (
                                                 {/* Team + payroll (20260810000001) â€” the operator's staff and pay runs. */}
                                                 <Route path="/manage/staff" element={<ProtectedRoute><BillingGate plan="hotel"><StaffManager /></BillingGate></ProtectedRoute>} />
                                                 <Route path="/manage/payroll" element={<ProtectedRoute><BillingGate plan="hotel"><PayrollPage /></BillingGate></ProtectedRoute>} />
+                                                <Route path="/manage/attendance" element={<ProtectedRoute><BillingGate plan="hotel"><StaffAttendance /></BillingGate></ProtectedRoute>} />
+                                                <Route path="/manage/analytics" element={<ProtectedRoute><BillingGate plan="hotel"><AnalyticsDashboard /></BillingGate></ProtectedRoute>} />
 
             {/* Public services catalog + agency/hotel profiles. */}
               <Route path="/services" element={<Services />} />

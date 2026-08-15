@@ -1,9 +1,16 @@
 // Staff-facing email notifications, sent by Postgres triggers via pg_net.
 //
-// Three events, one function, chosen by `payload.type`:
+// Five events, one function, chosen by `payload.type`:
 //   booking_requested — a guest asked to book a room  → the hotel's inbox
 //   service_inquiry   — someone asked about a service → the platform's inbox
 //   hotel_invite      — a hotel admin invited someone → the invitee's inbox
+//   property_listed   — an owner registered a unit    → the platform's inbox
+//   property_available— a unit came back on the market→ the platform's inbox
+//
+// The last two are ADMIN-FACING supply signals, not customer mail. The owner
+// already knows what they just did; the platform is the party that wants to know
+// that inventory changed, so it can moderate the listing and push it to whoever
+// is looking. Both go to ADMIN_NOTIFY_EMAIL and nowhere else.
 //
 // Follows the structure of supabase/functions/clerk-webhook/index.ts: CORS
 // headers, OPTIONS handling, secret verification BEFORE the payload is trusted,
@@ -35,7 +42,9 @@
 //   SUPABASE_SERVICE_ROLE_KEY — service role key (server only, never in the bundle)
 //   RESEND_API_KEY            — OPTIONAL. Absent = every send is a no-op.
 //   FROM_EMAIL                — OPTIONAL. Verified Resend sender. Defaults loud.
-//   ADMIN_NOTIFY_EMAIL        — OPTIONAL. Platform desk; required for service_inquiry.
+//   ADMIN_NOTIFY_EMAIL        — OPTIONAL. Platform desk; required for
+//                               service_inquiry, property_listed and
+//                               property_available. Unset = logged no-op.
 //   SITE_URL                  — OPTIONAL. Defaults to https://mogadishurents.com
 //
 // Deploy: npx supabase functions deploy send-notification
@@ -57,7 +66,12 @@ const json = (body: unknown, status = 200) =>
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type NotificationType = "booking_requested" | "service_inquiry" | "hotel_invite";
+type NotificationType =
+  | "booking_requested"
+  | "service_inquiry"
+  | "hotel_invite"
+  | "property_listed"
+  | "property_available";
 
 /**
  * What the trigger is allowed to say.
@@ -73,6 +87,7 @@ interface NotifyPayload {
   booking_id?: string;
   inquiry_id?: string;
   invite_id?: string;
+  property_id?: string;
 }
 
 /**
@@ -106,6 +121,32 @@ interface PropertyRow {
   owner_id: string | null;
 }
 
+/**
+ * The wider read used by the two admin supply notices.
+ *
+ * Deliberately separate from `PropertyRow` above: the booking handler wants
+ * three columns and should keep reading three. Note `toilets` — there is no
+ * `bathrooms` column in this schema (see the original properties DDL in
+ * 20260306213635); `toilets` is what the AddProperty form fills in for the
+ * bathroom count, and it is what the emails label "Bathrooms".
+ */
+interface PropertyDetailRow {
+  id: string;
+  title: string | null;
+  description: string | null;
+  type: string | null;
+  price: number | string | null;
+  is_daily_rate: boolean | null;
+  location: string | null;
+  bedrooms: number | null;
+  toilets: number | null;
+  occupancy_status: string | null;
+  is_listed: boolean | null;
+  is_available: boolean | null;
+  owner_id: string | null;
+  created_at: string | null;
+}
+
 interface HotelRoomRow {
   hotel_id: string;
   created_at: string;
@@ -137,6 +178,7 @@ interface HotelInviteRow {
   hotel_id: string;
   email: string | null;
   role: string;
+  permissions: string[] | null;
   /** ⚠ The credential. Never logged, never in a subject line. See STEP 13. */
   token: string;
   expires_at: string;
@@ -565,6 +607,150 @@ async function handleServiceInquiry(
   return { to: recipient, subject, text, html };
 }
 
+/** The columns both property notifications read. */
+type PropertyNotifyRow = {
+  id: string;
+  title: string | null;
+  type: string | null;
+  location: string | null;
+  price: number | string | null;
+  deposit: number | string | null;
+  is_daily_rate: boolean | null;
+  is_listed: boolean | null;
+  is_available: boolean | null;
+  occupancy_status: string | null;
+  bedrooms: number | null;
+  toilets: number | null;
+  owner_id: string | null;
+  org_id: string | null;
+  created_at: string | null;
+};
+
+/**
+ * property_listed and property_available — both go to the platform desk.
+ *
+ * One handler, because the two emails differ only in framing: the facts, the
+ * recipient and the link are identical, and two near-copies would drift the
+ * first time someone adds a field to one of them.
+ *
+ * ── WHY THE DB STORES `villa` AND THE EMAIL SAYS "House" ────────────────────
+ * The `property_type` enum was renamed house→villa in 20260323070000 but the UI
+ * vocabulary never followed. Anyone reading these emails is looking at the same
+ * listing in the admin panel, so the label has to match what they see there.
+ */
+async function handlePropertyEvent(
+  admin: Admin,
+  propertyId: string,
+  kind: "listed" | "available",
+): Promise<HandlerResult> {
+  const recipient = Deno.env.get("ADMIN_NOTIFY_EMAIL")?.trim();
+  if (!recipient) {
+    console.warn(
+      `[send-notification] property ${propertyId}: ADMIN_NOTIFY_EMAIL is not set — nothing sent. The listing is unaffected.`,
+    );
+    return null;
+  }
+
+  const { data, error } = await admin
+    .from("properties")
+    .select(
+      "id, title, type, location, price, deposit, is_daily_rate, is_listed, is_available, occupancy_status, bedrooms, toilets, owner_id, org_id, created_at",
+    )
+    .eq("id", propertyId)
+    .maybeSingle();
+
+  const p = data as PropertyNotifyRow | null;
+  if (error || !p) {
+    // A row deleted between the trigger firing and this request is normal —
+    // pg_net is fire-and-forget and does not join the transaction.
+    console.warn(`[send-notification] property ${propertyId} not found; nothing to send.`);
+    return null;
+  }
+
+  const title = p.title || "Untitled listing";
+  const typeLabel =
+    p.type === "villa" || p.type === "house"
+      ? "House"
+      : p.type === "apartment"
+        ? "Apartment"
+        : p.type === "hotel"
+          ? "Hotel room"
+          : p.type === "commercial"
+            ? "Commercial"
+            : (p.type || "Property");
+
+  // Nightly vs monthly is not cosmetic: a $45/night room read as $45/month is a
+  // 30x misstatement, and this email is what someone skims before acting.
+  const perPeriod = p.is_daily_rate || p.type === "hotel" ? "night" : "month";
+  const priceNum = p.price === null ? null : Number(p.price);
+  const price =
+    priceNum !== null && Number.isFinite(priceNum)
+      ? `$${priceNum.toLocaleString("en-US")}/${perPeriod}`
+      : "no price set";
+
+  const rooms = [
+    p.bedrooms != null ? `${p.bedrooms} bed` : null,
+    p.toilets != null ? `${p.toilets} bath` : null,
+  ]
+    .filter(Boolean)
+    .join(", ") || "not specified";
+
+  const publicUrl = `${SITE_URL}/property/${p.id}`;
+  const visibility = p.is_listed
+    ? p.is_available
+      ? "live on the marketplace"
+      : "listed but not currently available"
+    : "not listed publicly";
+
+  const heading = kind === "listed" ? "New listing" : "Back on the market";
+  const subject =
+    kind === "listed"
+      ? `New listing — ${title} (${p.location || "Mogadishu"})`
+      : `Back on the market — ${title} (${p.location || "Mogadishu"})`;
+  const intro =
+    kind === "listed"
+      ? `An owner registered a new ${typeLabel.toLowerCase()}.`
+      : `A previously occupied unit is available to rent again.`;
+
+  const text = [
+    heading.toUpperCase(),
+    ``,
+    intro,
+    ``,
+    `Title:      ${title}`,
+    `Type:       ${typeLabel}`,
+    `District:   ${p.location || "not set"}`,
+    `Price:      ${price}`,
+    `Rooms:      ${rooms}`,
+    `Occupancy:  ${p.occupancy_status || "not set"}`,
+    `Visibility: ${visibility}`,
+    // No email column exists on `profiles` — the Clerk id is genuinely all the
+    // database knows about who owns this. Do not invent a lookup.
+    `Owner:      ${p.owner_id || "unknown"}${p.org_id ? ` (agency ${p.org_id})` : ""}`,
+    ``,
+    publicUrl,
+  ].join("\n");
+
+  const html = renderHtml({
+    heading,
+    intro: escapeHtml(intro),
+    rows: [
+      row("Title", title),
+      row("Type", typeLabel),
+      row("District", p.location || "not set"),
+      row("Price", price),
+      row("Rooms", rooms),
+      row("Occupancy", p.occupancy_status || "not set"),
+      row("Visibility", visibility),
+      row("Owner", `${p.owner_id || "unknown"}${p.org_id ? ` (agency ${p.org_id})` : ""}`),
+    ].join(""),
+    ctaLabel: "View the listing",
+    ctaUrl: escapeHtml(publicUrl),
+  });
+
+  return { to: recipient, subject, text, html };
+}
+
 /**
  * hotel_invite — a hotel admin added someone to their team.
  *
@@ -585,7 +771,7 @@ async function handleHotelInvite(
 ): Promise<HandlerResult> {
   const { data, error } = await admin
     .from("hotel_invites")
-    .select("id, hotel_id, email, role, token, expires_at, accepted_at")
+    .select("id, hotel_id, email, role, permissions, token, expires_at, accepted_at")
     .eq("id", inviteId)
     .maybeSingle();
 
@@ -619,11 +805,28 @@ async function handleHotelInvite(
 
   // Plain words, not the enum. "agent" alone means nothing to a receptionist.
   const ROLE_WORDS: Record<string, string> = {
-    admin: "Admin — full control of the hotel page, its rooms, bookings and team",
-    agent: "Agent — can manage rooms, bookings and day-to-day operations",
-    viewer: "Viewer — can see the hotel's information, but cannot change anything",
+    admin: "Admin — full control of the hotel page, its rooms, bookings, staff and team",
+    manager: "Manager — manages operations: rooms, bookings, staff, housekeeping and inquiries",
+    agent: "Agent — can manage listings, bookings and day-to-day operations",
+    viewer: "Viewer — can see the hotel information, but cannot change anything",
   };
   const roleWords = ROLE_WORDS[invite.role] ?? invite.role;
+
+  // Build a task list label from explicit permissions (if any were granted)
+  const TASK_LABELS: Record<string, string> = {
+    list: "List new rooms / properties",
+    edit: "Edit pages & listings",
+    publish: "Publish / unpublish",
+    bookings: "Manage bookings & front desk",
+    inquiries: "Respond to inquiries",
+  };
+  const permissionsList = (invite.permissions ?? [])
+    .filter((t) => TASK_LABELS[t])
+    .map((t) => `  • ${TASK_LABELS[t]}`)
+    .join("\n");
+  const permissionsSection = permissionsList
+    ? `\nYou have also been granted these specific permissions:\n${permissionsList}\n`
+    : "";
 
   const joinUrl = `${SITE_URL}/join/${invite.token}`;
   const expires = new Date(invite.expires_at);
@@ -642,7 +845,7 @@ async function handleHotelInvite(
   const text = [
     `You've been invited to join ${hotelName} on Mogadishu Rents.`,
     ``,
-    `Your role: ${roleWords}`,
+    `Your role: ${roleWords}${permissionsSection}`,
     ``,
     `Open this link while signed in to accept:`,
     joinUrl,
@@ -656,7 +859,13 @@ async function handleHotelInvite(
     heading: `Join ${escapeHtml(hotelName)}`,
     intro:
       `You've been invited to the team for <strong>${escapeHtml(hotelName)}</strong> on Mogadishu Rents.`,
-    rows: [row("Hotel", hotelName), row("Your role", roleWords)].join(""),
+    rows: [
+      row("Hotel", hotelName),
+      row("Your role", roleWords),
+      ...(permissionsList
+        ? [row("Extra permissions", permissionsList.replace(/\n/g, "<br>"))]
+        : []),
+    ].join(""),
     ctaLabel: "Accept the invitation",
     // The URL sits in an href, so it is escaped like every other interpolation.
     ctaUrl: escapeHtml(joinUrl),
@@ -664,6 +873,173 @@ async function handleHotelInvite(
       `This link works <strong>once</strong> and expires on ${escapeHtml(expiresLabel)}. ` +
       `Anyone who has the link can use it — please don't forward it. ` +
       `If you weren't expecting this invitation, you can ignore this email.`,
+  });
+
+  return { to: recipient, subject, text, html };
+}
+
+/**
+ * property_listed / property_available — the platform's supply feed.
+ *
+ * ONE handler for both, because the facts are identical and only the framing
+ * differs. Keeping them as two `type`s rather than one with a flag means the
+ * trigger side stays dumb (each trigger states what it saw, it does not compute
+ * anything) and the subject lines can differ without a branch at the call site.
+ *
+ *   property_listed    — a row appeared in `properties`. A NEW unit exists.
+ *   property_available — an existing row's `is_available` went false → true.
+ *                        The unit is BACK on the market, not new.
+ *
+ * ⚠ HTML INJECTION. `title` and `description` are owner-written free text typed
+ * into the AddProperty form, and `location` is a free-text district, not an
+ * enum. Every single one of them goes through escapeHtml() below. The plain-text
+ * body is not an injection sink but is built from the same values, so nothing is
+ * duplicated in a form that could drift.
+ *
+ * There is NO owner email to CC. properties.owner_id is a Clerk id and no table
+ * in this database stores an address for a user — the same wall the booking
+ * handler documents above. So the Clerk id itself goes in the body: it is the
+ * only handle an admin has, and it is enough to find the person in the Clerk
+ * dashboard. Do not add a `profiles` lookup here; there is no email column to
+ * look up.
+ */
+async function handlePropertyNotice(
+  admin: Admin,
+  propertyId: string,
+  kind: "listed" | "available",
+): Promise<HandlerResult> {
+  // Checked first, before the read: with no desk to mail, the read is wasted
+  // work on a path that fires on every property insert in the system.
+  const recipient = Deno.env.get("ADMIN_NOTIFY_EMAIL")?.trim();
+  if (!recipient) {
+    console.warn(
+      `[send-notification] property_${kind} ${propertyId}: ADMIN_NOTIFY_EMAIL is not set — nothing sent. The property is still in the admin panel.`,
+    );
+    return null;
+  }
+
+  const { data, error } = await admin
+    .from("properties")
+    .select(
+      "id, title, description, type, price, is_daily_rate, location, bedrooms, toilets, occupancy_status, is_listed, is_available, owner_id, created_at",
+    )
+    .eq("id", propertyId)
+    .maybeSingle();
+
+  const property = data as PropertyDetailRow | null;
+  if (error || !property) {
+    // Normal, not alarming: pg_net is asynchronous and does not join the
+    // transaction that queued it, so an insert that rolled back after the
+    // trigger fired lands right here. Nothing to send is the correct outcome.
+    console.warn(
+      `[send-notification] property ${propertyId} not found (rolled back, or deleted before we read it); nothing to send.`,
+    );
+    return null;
+  }
+
+  const title = property.title || "Untitled listing";
+  const kindLabel = property.type || "unknown type";
+  const district = property.location || "not given";
+  // The period is the difference between a hotel room and a rental. Printing
+  // "$45" with no period has burned people reading these at a glance.
+  const period = property.is_daily_rate ? "/night" : "/month";
+  const price = `${formatMoney(property.price)}${period}`;
+  const bedrooms = property.bedrooms ?? 0;
+  // `toilets` is the bathroom count in this schema — see PropertyDetailRow.
+  const bathrooms = property.toilets ?? 0;
+  const occupancy = property.occupancy_status || "unknown";
+  // is_listed is the owner's intent ("show this publicly"); is_available is the
+  // computed truth the marketplace filters on. Print both — an owner who ticked
+  // "occupied" gets a listing that is registered but invisible, and the admin
+  // needs to see that this is on purpose rather than a bug.
+  const publiclyListed = property.is_listed
+    ? "Yes — the owner has it switched on"
+    : "No — the owner is holding it back";
+  const visibleNow = property.is_available
+    ? "Yes — it is showing in the public rental cards now"
+    : "No — not showing publicly (it is occupied, unlisted, or both)";
+  const ownerId = property.owner_id || "unknown";
+  // Long descriptions turn the mail into a wall. This is a triage notice.
+  const rawDescription = (property.description || "").trim();
+  const description = rawDescription.length > 400
+    ? `${rawDescription.slice(0, 400)}…`
+    : rawDescription;
+
+  const propertyUrl = `${SITE_URL}/property/${property.id}`;
+
+  const isNew = kind === "listed";
+
+  const subject = isNew
+    ? `New listing — ${title} (${district})`
+    : `Back on the market — ${title} (${district})`;
+
+  const heading = isNew ? "A new listing was created" : "A listing is available again";
+
+  // The lead line carries the whole distinction. An admin reading on a phone
+  // sees the subject and this sentence and nothing else.
+  const leadText = isNew
+    ? "An owner has just registered a new property on Mogadishu Rents."
+    : "An existing property has come back onto the market — it was unavailable and is now free to rent again. This is NOT a new listing.";
+
+  // ── The one case worth calling out in a NEW-listing mail ──────────────────
+  // The INSERT trigger fires on every row, including a unit registered as
+  // already occupied. That is intentional (the platform wants to know its
+  // supply, not just its shop window), so the body has to say why an admin who
+  // clicks through will find nothing on the public page.
+  const notNew = !isNew;
+  const occupiedOnArrival = isNew && property.is_available !== true;
+  const footnote = occupiedOnArrival
+    ? "Note: this unit is registered but NOT publicly visible — it was filed as occupied and/or unlisted. It is still new supply worth knowing about; you will get a second email if and when it becomes available to rent."
+    : notNew
+    ? "You are getting this because the unit's availability flipped from unavailable to available. Editing a price or a photo on an already-available unit does not send this email."
+    : "";
+
+  const text = [
+    isNew ? `NEW LISTING` : `BACK ON THE MARKET`,
+    ``,
+    leadText,
+    ``,
+    `Title:      ${title}`,
+    `Type:       ${kindLabel}`,
+    `District:   ${district}`,
+    `Price:      ${price}`,
+    `Bedrooms:   ${bedrooms}`,
+    `Bathrooms:  ${bathrooms}`,
+    `Occupancy:  ${occupancy}`,
+    `Listed:     ${publiclyListed}`,
+    `Visible:    ${visibleNow}`,
+    `Owner:      ${ownerId} (Clerk user id — look them up in the Clerk`,
+    `            dashboard; this database holds no email for a user)`,
+    ...(description ? [``, `Description:`, description] : []),
+    ``,
+    propertyUrl,
+    ...(footnote ? [``, footnote] : []),
+  ].join("\n");
+
+  const html = renderHtml({
+    heading,
+    // escapeHtml even here: `leadText` is ours, but the pattern is "nothing
+    // reaches the template unescaped", and an exception is how the next edit
+    // introduces a hole.
+    intro: escapeHtml(leadText),
+    rows: [
+      row("Title", title),
+      row("Type", kindLabel),
+      row("District", district),
+      row("Price", price),
+      row("Bedrooms", String(bedrooms)),
+      row("Bathrooms", String(bathrooms)),
+      row("Occupancy", occupancy),
+      row("Publicly listed", publiclyListed),
+      row("Visible now", visibleNow),
+      row("Owner (Clerk id)", ownerId),
+      description ? row("Description", description) : "",
+    ].join(""),
+    ctaLabel: "Open the listing",
+    ctaUrl: escapeHtml(propertyUrl),
+    footer: footnote
+      ? escapeHtml(footnote)
+      : "Sent automatically by Mogadishu Rents. Please do not reply to this address.",
   });
 
   return { to: recipient, subject, text, html };
@@ -769,6 +1145,24 @@ Deno.serve(async (req) => {
           return json({ ok: true, ignored: "missing_invite_id" });
         }
         message = await handleHotelInvite(admin, payload.invite_id);
+        break;
+      }
+
+      case "property_listed": {
+        if (!payload.property_id) {
+          console.warn("[send-notification] property_listed without property_id.");
+          return json({ ok: true, ignored: "missing_property_id" });
+        }
+        message = await handlePropertyEvent(admin, payload.property_id, "listed");
+        break;
+      }
+
+      case "property_available": {
+        if (!payload.property_id) {
+          console.warn("[send-notification] property_available without property_id.");
+          return json({ ok: true, ignored: "missing_property_id" });
+        }
+        message = await handlePropertyEvent(admin, payload.property_id, "available");
         break;
       }
 

@@ -9,12 +9,15 @@ import {
 import { Menu, X, User, LogIn, Plus, LayoutDashboard, Settings, LogOut, Heart, ChevronDown, Shield, Eye } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppAuth } from "@/hooks/use-auth";
+import { accountKind } from "@/lib/account-type";
 import { useClerk } from "@clerk/clerk-react";
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const { isSignedIn, user, orgId, platformRole } = useAppAuth();
+  // A hotel account adds rooms to its building, not properties to a portfolio.
+  const isHotelAccount = accountKind(platformRole) === "hotel";
 
   // Who sees the "Manage" entry: agency staff (they have an active org) and
   // solo landlords (no org, but a listing-capable platform role). Renters see
@@ -53,6 +56,7 @@ const Header = () => {
         {/* Desktop nav */}
         <nav className="hidden lg:flex items-center gap-1 p-1 rounded-full border border-border/70 bg-card/60">
           <Link to="/" className="px-4 py-2 text-sm font-semibold text-foreground rounded-full hover:bg-muted transition-colors">Home</Link>
+          <Link to="/showcase" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Overview</Link>
           <Link to="/properties" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Explore</Link>
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-1 px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors outline-none">
@@ -93,7 +97,7 @@ const Header = () => {
                 className="rounded-full font-semibold hover:bg-muted"
                 onClick={() => navigate("/add-property")}
               >
-                <Plus className="w-4 h-4" /> List your property
+                <Plus className="w-4 h-4" /> {isHotelAccount ? "Add a room" : "List your property"}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -180,6 +184,7 @@ const Header = () => {
           >
             <div className="container py-4 flex flex-col gap-1">
               <Link to="/" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Home</Link>
+              <Link to="/showcase" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Overview</Link>
               <Link to="/about" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>About</Link>
               <Link to="/properties" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>All Properties</Link>
               <Link to="/services" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Services</Link>
@@ -216,7 +221,7 @@ const Header = () => {
                       </div>
                     </div>
                     <Button size="sm" className="rounded-full font-semibold w-full shadow-card" onClick={() => { navigate("/add-property"); setIsOpen(false); }}>
-                      <Plus className="w-4 h-4" /> List your property
+                      <Plus className="w-4 h-4" /> {isHotelAccount ? "Add a room" : "List your property"}
                     </Button>
                     <div className="grid grid-cols-2 gap-2">
                       <Button variant="outline" size="sm" className="rounded-full" onClick={() => { navigate("/dashboard"); setIsOpen(false); }}>

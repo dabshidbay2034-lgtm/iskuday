@@ -172,11 +172,43 @@ export type Database = {
           deposit: number
           description: string | null
           floor_number: number | null
+          has_24h_front_desk: boolean
+          has_24h_security: boolean
+          has_air_conditioning: boolean
+          has_airport_transport: boolean
           has_balcony: boolean | null
+          has_banquet_room: boolean
+          has_bath_shower: boolean
+          has_bottled_water: boolean
+          has_cable_tv: boolean
+          has_desk: boolean
+          has_flatscreen_tv: boolean
+          has_housekeeping: boolean
+          has_iron: boolean
+          has_refrigerator: boolean
+          has_room_service: boolean
+          has_safe: boolean
+          has_telephone: boolean
+          has_toiletries: boolean
+          has_vip_facilities: boolean
+          has_breakfast: boolean
+          has_breakfast_buffet: boolean
+          has_business_center: boolean
+          has_car_hire: boolean
           has_cctv: boolean | null
-          has_parking: boolean | null
+          has_clothes_dryer: boolean
+          has_coffee_shop: boolean
           has_elevator: boolean
+          has_express_checkout: boolean
+          has_free_wifi: boolean
+          has_laundry: boolean
+          has_meeting_rooms: boolean
+          has_parking: boolean | null
+          has_restaurant: boolean
+          has_secured_parking: boolean
+          has_shuttle: boolean
           id: string
+          is_all_inclusive: boolean
           is_available: boolean
           is_daily_rate: boolean
           is_furnished: boolean | null
@@ -194,6 +226,7 @@ export type Database = {
           type: Database["public"]["Enums"]["property_type"]
           updated_at: string
           views: number
+          purpose: Database["public"]["Enums"]["property_purpose"]
         }
         Insert: {
           bedrooms?: number | null
@@ -201,11 +234,43 @@ export type Database = {
           deposit?: number
           description?: string | null
           floor_number?: number | null
+          has_24h_front_desk?: boolean
+          has_24h_security?: boolean
+          has_air_conditioning?: boolean
+          has_airport_transport?: boolean
           has_balcony?: boolean | null
+          has_banquet_room?: boolean
+          has_bath_shower?: boolean
+          has_bottled_water?: boolean
+          has_cable_tv?: boolean
+          has_desk?: boolean
+          has_flatscreen_tv?: boolean
+          has_housekeeping?: boolean
+          has_iron?: boolean
+          has_refrigerator?: boolean
+          has_room_service?: boolean
+          has_safe?: boolean
+          has_telephone?: boolean
+          has_toiletries?: boolean
+          has_vip_facilities?: boolean
+          has_breakfast?: boolean
+          has_breakfast_buffet?: boolean
+          has_business_center?: boolean
+          has_car_hire?: boolean
           has_cctv?: boolean | null
-          has_parking?: boolean | null
+          has_clothes_dryer?: boolean
+          has_coffee_shop?: boolean
           has_elevator?: boolean
+          has_express_checkout?: boolean
+          has_free_wifi?: boolean
+          has_laundry?: boolean
+          has_meeting_rooms?: boolean
+          has_parking?: boolean | null
+          has_restaurant?: boolean
+          has_secured_parking?: boolean
+          has_shuttle?: boolean
           id?: string
+          is_all_inclusive?: boolean
           is_available?: boolean
           is_daily_rate?: boolean
           is_furnished?: boolean | null
@@ -223,6 +288,7 @@ export type Database = {
           type?: Database["public"]["Enums"]["property_type"]
           updated_at?: string
           views?: number
+          purpose?: Database["public"]["Enums"]["property_purpose"]
         }
         Update: {
           bedrooms?: number | null
@@ -230,11 +296,43 @@ export type Database = {
           deposit?: number
           description?: string | null
           floor_number?: number | null
+          has_24h_front_desk?: boolean
+          has_24h_security?: boolean
+          has_air_conditioning?: boolean
+          has_airport_transport?: boolean
           has_balcony?: boolean | null
+          has_banquet_room?: boolean
+          has_bath_shower?: boolean
+          has_bottled_water?: boolean
+          has_cable_tv?: boolean
+          has_desk?: boolean
+          has_flatscreen_tv?: boolean
+          has_housekeeping?: boolean
+          has_iron?: boolean
+          has_refrigerator?: boolean
+          has_room_service?: boolean
+          has_safe?: boolean
+          has_telephone?: boolean
+          has_toiletries?: boolean
+          has_vip_facilities?: boolean
+          has_breakfast?: boolean
+          has_breakfast_buffet?: boolean
+          has_business_center?: boolean
+          has_car_hire?: boolean
           has_cctv?: boolean | null
-          has_parking?: boolean | null
+          has_clothes_dryer?: boolean
+          has_coffee_shop?: boolean
           has_elevator?: boolean
+          has_express_checkout?: boolean
+          has_free_wifi?: boolean
+          has_laundry?: boolean
+          has_meeting_rooms?: boolean
+          has_parking?: boolean | null
+          has_restaurant?: boolean
+          has_secured_parking?: boolean
+          has_shuttle?: boolean
           id?: string
+          is_all_inclusive?: boolean
           is_available?: boolean
           is_daily_rate?: boolean
           is_furnished?: boolean | null
@@ -252,6 +350,7 @@ export type Database = {
           type?: Database["public"]["Enums"]["property_type"]
           updated_at?: string
           views?: number
+          purpose?: Database["public"]["Enums"]["property_purpose"]
         }
         Relationships: []
       }
@@ -633,7 +732,8 @@ export type Database = {
         | "agent"
         | "admin"
         | "semi_admin"
-      property_type: "villa" | "apartment" | "hotel" | "commercial"
+      property_type: "villa" | "apartment" | "hotel" | "bnb" | "commercial"
+      property_purpose: "rent" | "sell"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -769,7 +869,8 @@ export const Constants = {
         "admin",
         "semi_admin",
       ],
-      property_type: ["villa", "apartment", "hotel", "commercial"],
+      property_type: ["villa", "apartment", "hotel", "bnb", "commercial"],
+      property_purpose: ["rent", "sell"],
     },
   },
 } as const

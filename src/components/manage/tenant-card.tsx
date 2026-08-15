@@ -10,8 +10,7 @@ import {
   type LeaseStatus,
   type Tenant,
 } from "@/hooks/use-tenants";
-import { useAppAuth } from "@/hooks/use-auth";
-import { PERMISSIONS } from "@/lib/permissions";
+import { usePropertyAccess, type ManagedProperty } from "@/hooks/use-rent";
 import { cn } from "@/lib/utils";
 
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +40,9 @@ import { TenantDialog } from "./tenant-dialog";
  */
 
 interface TenantCardProps {
-  propertyId: string;
+  /** The unit. Taken whole (not just an id) so rights resolve the same way
+   *  every other card on /manage/property/:id resolves them. */
+  property: ManagedProperty;
   className?: string;
 }
 
@@ -79,9 +80,12 @@ function formatMoney(amount: number | null): string {
   return `$${Number(amount).toLocaleString()}`;
 }
 
-export function TenantCard({ propertyId, className }: TenantCardProps) {
-  const { can } = useAppAuth();
-  const canManage = can(PERMISSIONS.TENANTS_MANAGE);
+export function TenantCard({ property, className }: TenantCardProps) {
+  const propertyId = property.id;
+  // `usePropertyAccess`, not `can()` — see PrivateNotesCard. A solo landlord
+  // has no org role, so the matrix would make their own tenant record
+  // read-only on their own unit.
+  const { canManageTenants: canManage } = usePropertyAccess(property);
 
   const {
     isLoading, isError, currentTenant, pastTenants, leaseStatus, deactivateTenant,

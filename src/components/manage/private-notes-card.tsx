@@ -3,7 +3,7 @@ import { Lock, Loader2, Check, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAppAuth } from "@/hooks/use-auth";
-import { PERMISSIONS } from "@/lib/permissions";
+import { usePropertyAccess, type ManagedProperty } from "@/hooks/use-rent";
 import { usePropertyNotes, useSavePropertyNotes } from "@/hooks/use-property-notes";
 
 import { Badge } from "@/components/ui/badge";
@@ -36,13 +36,18 @@ import { cn } from "@/lib/utils";
 const AUTOSAVE_DELAY_MS = 1200;
 
 interface PrivateNotesCardProps {
-  propertyId: string;
+  /** The unit. Taken whole (not just an id) so rights resolve the same way
+   *  every other card on /manage/property/:id resolves them. */
+  property: ManagedProperty;
   className?: string;
 }
 
-export function PrivateNotesCard({ propertyId, className }: PrivateNotesCardProps) {
-  const { can, orgId } = useAppAuth();
-  const canManage = can(PERMISSIONS.NOTES_MANAGE);
+export function PrivateNotesCard({ property, className }: PrivateNotesCardProps) {
+  const propertyId = property.id;
+  const { orgId } = useAppAuth();
+  // `usePropertyAccess`, not `can()` — the org matrix alone returns false for a
+  // solo landlord, who would then be locked out of the notes on their own unit.
+  const { canManageNotes: canManage } = usePropertyAccess(property);
 
   const { data, isPending, isError } = usePropertyNotes(propertyId);
   const saveNotes = useSavePropertyNotes();

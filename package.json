@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "sitemap": "node scripts/generate-sitemap.mjs",
     "lint": "eslint .",
+    "orphans": "node scripts/find-orphans.mjs",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "preview": "vite preview",
     "test": "vitest run",

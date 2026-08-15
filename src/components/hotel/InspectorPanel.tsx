@@ -1,10 +1,12 @@
-import { Check, Loader2, Upload, Wand2, X } from "lucide-react";
+import { AlertCircle, Check, Loader2, Upload, Wand2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { cn } from "@/lib/utils";
 import { SECTION_META, type PageSection } from "@/components/hotel/page-sections";
 import { SectionFields } from "@/components/hotel/SectionFields";
@@ -23,6 +25,8 @@ export type PageSettings = {
   contactWhatsapp: string;
   contactEmail: string;
   address: string;
+  /** The hotel's single district. "" = not chosen yet. */
+  district: string;
   mapsUrl: string;
   socials: { facebook: string; instagram: string; tiktok: string; twitter: string };
   isPublished: boolean;
@@ -39,6 +43,7 @@ export function InspectorPanel({
   rooms, selectedRooms, onToggleRoom,
   slug, onApplyLook, onLogoFile, onLogoRemove, logoUploading, onQueueDelete,
   team,
+  pages,
 }: {
   tab: "block" | "page";
   onTabChange: (t: "block" | "page") => void;
@@ -68,6 +73,8 @@ export function InspectorPanel({
    * page, where the hotel already lives.
    */
   team?: React.ReactNode;
+  /** The hotel's page list (add/rename/publish/home/delete), passed in as a slot. */
+  pages?: React.ReactNode;
 }) {
   /**
    * A plain block that fills whatever container it is given — no positioning.
@@ -137,6 +144,7 @@ export function InspectorPanel({
               onLogoRemove={onLogoRemove}
               logoUploading={logoUploading}
               team={team}
+              pages={pages}
             />
           </TabsContent>
         </div>
@@ -149,7 +157,7 @@ export function InspectorPanel({
 
 function PageTab({
   settings, onChange, rooms, selectedRooms, onToggleRoom, slug, onApplyLook,
-  onLogoFile, onLogoRemove, logoUploading, team,
+  onLogoFile, onLogoRemove, logoUploading, team, pages,
 }: {
   settings: PageSettings;
   onChange: (patch: Partial<PageSettings>) => void;
@@ -162,6 +170,8 @@ function PageTab({
   onLogoRemove: () => void;
   logoUploading: boolean;
   team?: React.ReactNode;
+  /** The hotel's page list (add/rename/publish/home/delete), passed in as a slot. */
+  pages?: React.ReactNode;
 }) {
   const accentError = !/^#[0-9a-fA-F]{6}$/.test(settings.accentColor)
     ? "Use a hex colour like #0f766e."
@@ -317,12 +327,48 @@ function PageTab({
         )}
       </Group>
 
+      {/* ── District ──────────────────────────────────────────────────────────
+          A hotel is one building, so it has one district — and this is the only
+          place it can be set. The add-room wizard reads it from here instead of
+          asking again, which is what stops one hotel's rooms from ending up
+          scattered across two districts in search. */}
+      <Group title="District">
+        <div className="space-y-2">
+          <Select
+            value={settings.district || undefined}
+            onValueChange={(v) => onChange({ district: v })}
+          >
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Choose the district" />
+            </SelectTrigger>
+            <SelectContent>
+              {MOGADISHU_DISTRICTS.map((d) => (
+                <SelectItem key={d} value={d} className="text-xs">{d}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {settings.district ? (
+            <p className="text-[11px] text-muted-foreground">
+              Every room you add is filed under{" "}
+              <span className="text-foreground">{settings.district}</span>.
+            </p>
+          ) : (
+            <p className="text-[11px] text-amber-600 dark:text-amber-500 flex items-start gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              Set this before adding rooms — the room form takes its district
+              from here and won't run without it.
+            </p>
+          )}
+        </div>
+      </Group>
+
       <Group title="Contact & socials">
         <div className="space-y-2">
           <Field label="Phone" value={settings.contactPhone} onChange={(v) => onChange({ contactPhone: v })} placeholder="+252…" />
           <Field label="WhatsApp" value={settings.contactWhatsapp} onChange={(v) => onChange({ contactWhatsapp: v })} placeholder="+252…" />
           <Field label="Email" value={settings.contactEmail} onChange={(v) => onChange({ contactEmail: v })} placeholder="stay@hotel.com" />
-          <Field label="Address" value={settings.address} onChange={(v) => onChange({ address: v })} placeholder="Street, district, city" />
+          {/* Street only — the district above is the authoritative one. */}
+          <Field label="Street address" value={settings.address} onChange={(v) => onChange({ address: v })} placeholder="Street or landmark" />
           <Field label="Maps link" value={settings.mapsUrl} onChange={(v) => onChange({ mapsUrl: v })} placeholder="https://maps.app.goo.gl/…" />
           <Field label="Facebook" value={settings.socials.facebook} onChange={(v) => onChange({ socials: { ...settings.socials, facebook: v } })} />
           <Field label="Instagram" value={settings.socials.instagram} onChange={(v) => onChange({ socials: { ...settings.socials, instagram: v } })} />
@@ -333,6 +379,10 @@ function PageTab({
 
       {/* Sits above Publish on purpose: deciding who can edit the page is the
           last thing you settle before deciding whether the world can see it. */}
+      {/* Above Team and Publish: what pages exist is a more basic question
+          than who may edit them or whether the world can see them. */}
+      {pages && <Group title="Pages">{pages}</Group>}
+
       {team && <Group title="Team">{team}</Group>}
 
       <Group title="Publish">

@@ -30,6 +30,7 @@ import {
 import { BookingDialog } from "./booking-dialog";
 import { CheckoutDialog } from "./checkout-dialog";
 import { cn } from "@/lib/utils";
+import { isBookableType } from "@/lib/property-kind";
 
 const STATUS_STYLES: Record<BookingStatus, string> = {
   requested: "bg-secondary text-muted-foreground border-border",
@@ -41,9 +42,13 @@ const STATUS_STYLES: Record<BookingStatus, string> = {
 };
 
 /**
- * Reservations for one hotel room. Shows the full history with the lifecycle
- * actions (confirm an online request, check a guest in/out, cancel). Only desk
- * staff manage; viewers read. Rendered only for nightly-rate hotel rooms.
+ * Reservations for one bookable unit — a hotel room or a BnB. Shows the full
+ * history with the lifecycle actions (confirm an online request, check a guest
+ * in/out, cancel). Only desk staff manage; viewers read.
+ *
+ * Gated on `isBookableType`, not `type === "hotel"`: a BnB takes reservations
+ * exactly the way a hotel room does, and the same guard governs the public
+ * booking RPC in 20260819000002.
  */
 export function HotelBookingsCard({ property }: { property: ManagedProperty }) {
   const { canViewBookings: canView, canManageBookings: canManage } = usePropertyAccess(property);
@@ -55,7 +60,7 @@ export function HotelBookingsCard({ property }: { property: ManagedProperty }) {
   const [checkingOut, setCheckingOut] = useState<Booking | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
 
-  if (!canView || property.type !== "hotel") return null;
+  if (!canView || !isBookableType(property.type)) return null;
 
   const bookings = data ?? [];
   const upcoming = bookings

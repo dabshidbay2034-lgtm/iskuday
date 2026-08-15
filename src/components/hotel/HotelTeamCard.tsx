@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
-import { Copy, Loader2, Mail, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
+import { Copy, Loader2, Mail, Shield, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
 
 import { toast } from "sonner";
 import { useAppAuth } from "@/hooks/use-auth";
@@ -15,8 +15,13 @@ import {
   useUpdateHotelMemberRole,
   HOTEL_ROLES,
   HOTEL_ROLE_ORDER,
+  HOTEL_TASKS,
+  HOTEL_TASK_LABELS,
+  HOTEL_ROLE_DEFAULT_TASKS,
+  hotelMemberExtraTasks,
   type HotelMember,
   type HotelRole,
+  type HotelTask,
 } from "@/hooks/use-hotel-members";
 import {
   useHotelInvites,
@@ -27,6 +32,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -83,36 +89,54 @@ export function HotelTeamCard({
   const canManage = isOwner || hotelRoleCanManageMembers(myRole.data);
 
   const [removeTarget, setRemoveTarget] = useState<HotelMember | null>(null);
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<HotelRole>("agent");
-  const [touched, setTouched] = useState(false);
+    const [email, setEmail] = useState("");
+    const [role, setRole] = useState<HotelRole>("agent");
+    const [permissions, setPermissions] = useState<string[]>([]);
+    const [touched, setTouched] = useState(false);
 
-  const emailError = useMemo(() => {
-    if (!touched || !email) return null;
-    const parsed = emailSchema.safeParse(email.trim());
-    return parsed.success ? null : parsed.error.issues[0]?.message ?? null;
-  }, [email, touched]);
+    const emailError = useMemo(() => {
+      if (!touched || !email) return null;
+      const parsed = emailSchema.safeParse(email.trim());
+      return parsed.success ? null : parsed.error.issues[0]?.message ?? null;
+    }, [email, touched]);
 
-  const rows = members.data ?? [];
-  const pending = invites.data ?? [];
-  const adminCount = countHotelAdmins(members.data);
+    const rows = members.data ?? [];
+    const pending = invites.data ?? [];
+    const adminCount = countHotelAdmins(members.data);
 
-  const submitInvite = (e: React.FormEvent) => {
-    e.preventDefault();
-    setTouched(true);
-    const parsed = emailSchema.safeParse(email.trim());
-    if (!parsed.success) return;
-    invite.mutate(
-      { email: parsed.data, role },
-      {
-        onSuccess: () => {
-          setEmail("");
-          setRole("agent");
-          setTouched(false);
+    const allTasks: HotelTask[] = Object.values(HOTEL_TASKS);
+
+    /** When role changes to/from admin, reset permissions. Admin gets every task by default. */
+    const handleRoleChange = (r: HotelRole) => {
+      setRole(r);
+      if (r === "admin") {
+        setPermissions([]); // admin role implies all tasks; no explicit list needed
+      }
+    };
+
+    const togglePermission = (task: string) => {
+      setPermissions((prev) =>
+        prev.includes(task) ? prev.filter((t) => t !== task) : [...prev, task],
+      );
+    };
+
+    const submitInvite = (e: React.FormEvent) => {
+      e.preventDefault();
+      setTouched(true);
+      const parsed = emailSchema.safeParse(email.trim());
+      if (!parsed.success) return;
+      invite.mutate(
+        { email: parsed.data, role, permissions: role === "admin" ? [] : permissions },
+        {
+          onSuccess: () => {
+            setEmail("");
+            setRole("agent");
+            setPermissions([]);
+            setTouched(false);
+          },
         },
-      },
-    );
-  };
+      );
+    };
 
   const confirmRemove = () => {
     if (!removeTarget) return;
@@ -204,10 +228,20 @@ export function HotelTeamCard({
                     </SelectContent>
                   </Select>
                 ) : (
-                  <Badge variant="secondary" className="rounded-full text-[10px] font-normal">
-                    {HOTEL_ROLES[m.role].label}
-                  </Badge>
-                )}
+                                  <Badge variant="secondary" className="rounded-full text-[10px] font-normal">
+                                    {HOTEL_ROLES[m.role].label}
+                                  </Badge>
+                                )}
+                                {/* Show explicit task grants beyond role default */}
+                                {m.permissions.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
+                                    {m.permissions.map((t) => (
+                                      <Badge key={t} variant="outline" className="rounded-full text-[9px] px-1.5 py-0">
+                                        {HOTEL_TASK_LABELS[t as HotelTask] ?? t}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
               </li>
             );
           })}
@@ -240,8 +274,17 @@ export function HotelTeamCard({
                     {inv.email}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    {HOTEL_ROLES[inv.role].label} · joins when they open the link
-                  </p>
+                                      {HOTEL_ROLES[inv.role].label} · joins when they open the link
+                                    </p>
+                                    {inv.permissions.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-0.5">
+                                        {inv.permissions.map((t) => (
+                                          <Badge key={t} variant="outline" className="rounded-full text-[9px] px-1.5 py-0">
+                                            {HOTEL_TASK_LABELS[t as HotelTask] ?? t}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
                 </div>
                 {canManage && (
                   <>
@@ -317,7 +360,7 @@ export function HotelTeamCard({
             <Label htmlFor="hotel-invite-role" className="text-[11px] text-muted-foreground">
               Role
             </Label>
-            <Select value={role} onValueChange={(v) => setRole(v as HotelRole)}>
+            <Select value={role} onValueChange={handleRoleChange}>
               <SelectTrigger id="hotel-invite-role" className="h-9 rounded-lg text-sm bg-background">
                 <SelectValue />
               </SelectTrigger>
@@ -334,9 +377,36 @@ export function HotelTeamCard({
                 ))}
               </SelectContent>
             </Select>
-          </div>
+                      </div>
 
-          <Button
+                      {/* Specific-task grants. Admin implies every task, so the list is
+                          surfaced only for non-admin roles. Selecting a task here grants
+                          that permission explicitly via hotel_members.permissions; the role
+                          default set (see HOTEL_ROLE_DEFAULT_TASKS) applies on top. */}
+                      {role !== "admin" && (
+                        <div className="space-y-1">
+                          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                            <Shield className="w-3 h-3" />
+                            Allow these specific tasks
+                          </p>
+                          <div className="rounded-lg border border-border bg-background p-2 space-y-1">
+                            {allTasks.map((task) => (
+                              <label key={task} className="flex items-center gap-2 cursor-pointer">
+                                <Checkbox
+                                  checked={permissions.includes(task)}
+                                  onCheckedChange={() => togglePermission(task)}
+                                />
+                                <span className="text-[11px] text-foreground">{HOTEL_TASK_LABELS[task]}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <p className="text-[9px] text-muted-foreground">
+                            {role === "manager" ? "Managers already get the default operations set — add extra tasks here only if needed." : "Tick the exact tasks they're allowed to do; leave unticked everything they must not."}
+                          </p>
+                        </div>
+                      )}
+
+                      <Button
             type="submit"
             variant="hero"
             size="sm"

@@ -151,6 +151,7 @@ const Billing = () => {
                 entitlement={entitlements[plan.id]}
                 isSuggested={suggested === plan.id}
                 isPending={isPending}
+                suggestedPlanId={suggested}
               />
             ))}
           </div>
@@ -334,15 +335,17 @@ function PlanCard({
   entitlement,
   isSuggested,
   isPending,
+  suggestedPlanId,
 }: {
   plan: Plan;
   entitlement: Entitlement;
   isSuggested: boolean;
   isPending: boolean;
+  suggestedPlanId: PlanId | null;
 }) {
   const startTrial = useStartTrial(plan.id);
   const { state, isEntitled } = entitlement;
-  const canStartTrial = !isPending && state === "none";
+  const canStartTrial = !isPending && state === "none" && suggestedPlanId === plan.id;
 
   return (
     <div
@@ -397,6 +400,11 @@ function PlanCard({
             {startTrial.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Start {TRIAL_DAYS} free days
           </Button>
+        ) : state === "none" ? (
+          // The plan doesn't match this account's type
+          <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground text-center">
+            <span>Switch your account type in Settings to access this plan</span>
+          </div>
         ) : (
           // Trial already used. No checkout to send them to, so the honest CTA
           // points at the instructions further down this same page.

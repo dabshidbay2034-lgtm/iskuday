@@ -24,6 +24,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { isBookableType } from "@/lib/property-kind";
 
 const STATUS_STYLES: Record<HousekeepingTaskStatus, string> = {
   pending: "bg-secondary text-muted-foreground border-border",
@@ -33,9 +34,12 @@ const STATUS_STYLES: Record<HousekeepingTaskStatus, string> = {
 };
 
 /**
- * Housekeeping turnaround tasks for one room (hotel management). Between
- * guests the desk logs a clean / deep-clean / inspection / maintenance task and
- * works through it. Written by anyone with booking-manage rights.
+ * Housekeeping turnaround tasks for one bookable unit — a hotel room or a BnB.
+ * Between guests the desk logs a clean / deep-clean / inspection / maintenance
+ * task and works through it. Written by anyone with booking-manage rights.
+ *
+ * A BnB needs this as much as a hotel room does: the turnaround between two
+ * guests is the same job whoever owns the building.
  */
 export function HousekeepingCard({ property }: { property: ManagedProperty }) {
   const { canViewBookings: canView, canManageBookings: canManage } = usePropertyAccess(property);
@@ -48,7 +52,7 @@ export function HousekeepingCard({ property }: { property: ManagedProperty }) {
   const [taskType, setTaskType] = useState<HousekeepingTaskType>("clean");
   const [adding, setAdding] = useState(false);
 
-  if (!canView || property.type !== "hotel") return null;
+  if (!canView || !isBookableType(property.type)) return null;
 
   const tasks = data ?? [];
   const open = tasks.filter((t) => t.status === "pending" || t.status === "in_progress");

@@ -13,13 +13,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import {
   Home, Building2, Hotel, Briefcase, SlidersHorizontal, Search, MapPin, X,
-  Bed, DollarSign, Car, Cctv, Waves, ArrowUpDown, Armchair, CalendarDays,
+  Bed, BedDouble, DollarSign, Car, Cctv, Waves, ArrowUpDown, Armchair, CalendarDays,
+  Snowflake, Refrigerator, ConciergeBell,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Seo from "@/components/Seo";
 import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import type { Property, PropertyType } from "@/lib/types";
+import { useRoomBookedRanges, bookedUntil } from "@/hooks/use-room-availability";
 
 interface RawPropertyRecord {
   id: string;
@@ -36,6 +38,7 @@ interface RawPropertyRecord {
   is_listed?: boolean;
   occupancy_status?: string;
   is_daily_rate?: boolean;
+  purpose?: string;
   bedrooms?: number;
   living_rooms?: number;
   kitchens?: number;
@@ -45,6 +48,9 @@ interface RawPropertyRecord {
   floor_number?: number;
   has_balcony?: boolean;
   is_furnished?: boolean;
+  has_air_conditioning?: boolean;
+  has_refrigerator?: boolean;
+  has_room_service?: boolean;
   property_images?: Array<{ image_url: string; sort_order?: number }>;
 }
 
@@ -53,6 +59,7 @@ const typeFilters = [
   { value: "villa", label: "Houses", icon: Home },
   { value: "apartment", label: "Apartments", icon: Building2 },
   { value: "hotel", label: "Hotels", icon: Hotel },
+  { value: "bnb", label: "BnB", icon: BedDouble },
   { value: "commercial", label: "Commercial", icon: Briefcase },
 ];
 
@@ -85,6 +92,8 @@ const SEO_TYPE_LABELS: Record<string, { plural: string; lower: string; forRent: 
   apartment: { plural: "Apartments", lower: "apartments", forRent: true },
   // "Hotels for rent" reads as a typo — hotels are booked by the night.
   hotel: { plural: "Hotels", lower: "hotel rooms", forRent: false },
+  // Same reasoning: a BnB is booked, not rented.
+  bnb: { plural: "BnB", lower: "BnB", forRent: false },
   commercial: { plural: "Commercial Spaces", lower: "commercial spaces", forRent: true },
 };
 
@@ -154,6 +163,7 @@ const Properties = () => {
   const { isFavorite, toggleFavorite, isAuthenticated } = useFavorites();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeType = searchParams.get("type") || "";
+  const activePurpose = searchParams.get("purpose") || "";
   const districtParam = searchParams.get("district") || searchParams.get("location") || "";
   const minPriceParam = searchParams.get("minPrice") || "";
   const maxPriceParam = searchParams.get("maxPrice") || "";
@@ -199,19 +209,30 @@ const Properties = () => {
   const { data: dbProperties, isLoading } = useQuery({
     queryKey: ["properties", activeType],
     queryFn: async () => {
-      // Query properties where is_listed = true AND occupancy_status = 'vacant'
+      // `is_available` is the ONLY visibility gate.
+      //
+      // It used to be checked alongside is_listed and occupancy_status here,
+      // which re-implemented the rule client-side and got it wrong for nightly
+      // units: a hotel room or BnB marked occupied vanished from search even
+      // though it is still bookable for every later date. 20260820000001
+      // derives is_available in a database trigger, per type (nightly =
+      // listed; monthly = listed AND vacant), so one condition here is both
+      // correct and impossible to drift from.
       let query = supabase
         .from("properties")
         .select("*, property_images(image_url, sort_order)")
-        .or("is_listed.eq.true,is_listed.is.null")
-        .or("occupancy_status.eq.vacant,occupancy_status.is.null")
         .eq("is_available", true)
         .order("created_at", { ascending: false });
 
       if (activeType) {
         // activeType comes from a URL query param; cast to the database enum
         // so the generated column types are satisfied.
-        query = query.eq("type", activeType as "villa" | "apartment" | "hotel" | "commercial");
+        query = query.eq("type", activeType as "villa" | "apartment" | "hotel" | "bnb" | "commercial");
+      }
+
+      // ?purpose=rent or ?purpose=sell — for-sale listings filter
+      if (activePurpose) {
+        query = query.eq("purpose", activePurpose as "rent" | "sell");
       }
 
       const { data, error } = await query;
@@ -220,14 +241,12 @@ const Properties = () => {
     },
   });
 
-  // Client-side filtering and strict enforcement of listed + vacant status
+  // Client-side filtering for the facets the query doesn't cover.
   const properties: Property[] = (dbProperties || [])
     .filter((p) => {
-      // Hard requirement: only show properties where is_listed = true AND occupancy_status = 'vacant'
-      const isListed = p.is_listed !== false;
-      const isVacant = p.occupancy_status ? p.occupancy_status === "vacant" : p.is_available !== false;
-      if (!isListed || !isVacant) return false;
-
+      // No occupancy re-check here — see the query above. A nightly unit that
+      // is booked tonight still belongs in the results; the card says "Booked
+      // till <date>" instead of the listing disappearing.
       if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase()) && !p.location.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (district && district !== "all" && p.location !== district) return false;
       if (minPrice && p.price < Number(minPrice)) return false;
@@ -238,6 +257,9 @@ const Properties = () => {
       if (amenities.includes("balcony") && !p.has_balcony) return false;
       if (amenities.includes("furnished") && !p.is_furnished) return false;
       if (amenities.includes("daily_rate") && !p.is_daily_rate) return false;
+      if (amenities.includes("air_conditioning") && !p.has_air_conditioning) return false;
+      if (amenities.includes("refrigerator") && !p.has_refrigerator) return false;
+      if (amenities.includes("room_service") && !p.has_room_service) return false;
       return true;
     })
     .map((p) => ({
@@ -256,6 +278,7 @@ const Properties = () => {
       created_at: p.created_at,
       is_available: p.is_available ?? true,
       is_daily_rate: p.is_daily_rate,
+      purpose: p.purpose as "rent" | "sell" | undefined,
       bedrooms: p.bedrooms,
       living_rooms: p.living_rooms,
       kitchens: p.kitchens,
@@ -271,6 +294,12 @@ const Properties = () => {
       if (sortBy === "price_desc") return b.price - a.price;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
+
+  // One RPC for every nightly unit on the page, not one per card. The mapping
+  // above rewrites only villa→house, so "hotel"/"bnb" survive it intact and
+  // `isBookableType` inside the hook still recognises them.
+  const { data: bookedRanges } = useRoomBookedRanges(properties);
+  const bookedUntilFor = (id: string) => bookedUntil(bookedRanges?.[id] ?? []);
 
   const seo = seoForFilters({
     type: activeType,
@@ -406,6 +435,9 @@ const Properties = () => {
                       { key: "balcony", label: "Balcony", icon: Waves },
                       { key: "furnished", label: "Furnished", icon: Armchair },
                       { key: "daily_rate", label: "Daily Rate", icon: CalendarDays },
+                      { key: "air_conditioning", label: "Air Conditioning", icon: Snowflake },
+                      { key: "refrigerator", label: "Refrigerator", icon: Refrigerator },
+                      { key: "room_service", label: "Room Service", icon: ConciergeBell },
                     ].map((a) => (
                       <button
                         key={a.key}
@@ -449,6 +481,46 @@ const Properties = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Purpose pills — For Rent / For Sale toggle */}
+        <div className="flex gap-2 pb-2">
+          <button
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete("purpose");
+              setSearchParams(next);
+            }}
+            className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold border transition-colors ${
+              !activePurpose
+                ? "bg-accent text-accent-foreground border-accent"
+                : "bg-card text-muted-foreground border-border hover:border-accent/40 hover:text-foreground"
+            }`}
+          >
+            All
+          </button>
+          {[
+            { value: "rent", label: "For Rent", icon: Home },
+            { value: "sell", label: "For Sale", icon: DollarSign },
+          ].map((f) => (
+            <button
+              key={f.value}
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                if (activePurpose === f.value) next.delete("purpose");
+                else next.set("purpose", f.value);
+                setSearchParams(next);
+              }}
+              className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold border transition-colors ${
+                activePurpose === f.value
+                  ? "bg-accent text-accent-foreground border-accent"
+                  : "bg-card text-muted-foreground border-border hover:border-accent/40 hover:text-foreground"
+              }`}
+            >
+              <f.icon className="w-3.5 h-3.5" />
+              {f.label}
+            </button>
+          ))}
+        </div>
 
         {/* Type pills */}
         <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide">
@@ -539,6 +611,7 @@ const Properties = () => {
                   isFavorite={isFavorite(property.id)}
                   onToggleFavorite={toggleFavorite}
                   isAuthenticated={isAuthenticated}
+                  bookedUntil={bookedUntilFor(property.id)}
                 />
               </motion.div>
             ))}

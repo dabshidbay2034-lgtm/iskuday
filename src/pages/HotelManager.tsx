@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, BedDouble, CalendarDays, ChevronRight, ConciergeBell,
-  DoorOpen, Globe, LogOut, Plus, Sparkles, User, Users, Wallet,
+  DoorOpen, Globe, LogOut, Plus, Sparkles, User, Users, Wallet, BarChart3, Clock,
 } from "lucide-react";
 
 import Header from "@/components/Header";
@@ -136,6 +136,16 @@ const HotelManager = () => {
             <Button variant="outline" size="sm" asChild>
               <Link to="/manage/payroll">
                 <Wallet className="w-4 h-4" /> Payroll
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/manage/attendance">
+                <Clock className="w-4 h-4" /> Attendance
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/manage/analytics">
+                <BarChart3 className="w-4 h-4" /> Analytics
               </Link>
             </Button>
             <Button variant="ghost" size="sm" asChild>

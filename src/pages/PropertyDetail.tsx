@@ -14,13 +14,19 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft, MapPin, Bed, Bath, Car, Cctv, Building2, Waves,
-  Sofa, CookingPot, DollarSign, Shield, User, Phone, Mail, Calendar, Home, Hotel, Eye, MessageCircle, Armchair
+  Sofa, CookingPot, DollarSign, Shield, User, Phone, Mail, Calendar, Home, Hotel, Eye, MessageCircle, Armchair, CalendarClock,
+  Wifi, Coffee, PlaneTakeoff, Briefcase, Users, Sparkles, ShieldCheck, CarFront, Utensils, Sun,
+  UtensilsCrossed, Bus, Landmark, Clock, CheckCircle2, Wind, Shirt,
+  Snowflake, Laptop, ConciergeBell, Refrigerator, Tv, MonitorPlay, ShowerHead, Vault,
+  Phone as PhoneIcon, Crown, GlassWater, Droplets, SprayCan,
 } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { useAppAuth } from "@/hooks/use-auth";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
-import { propertyTypeClass, propertyTypeLabel } from "@/lib/property-display";
+import { propertyTypeClass, propertyTypeLabel, purposeLabel, purposeClass } from "@/lib/property-display";
+import { isBookableType, isNightlyRateType } from "@/lib/property-kind";
+import { useRoomBookedRanges, bookedUntil, formatBookedUntil } from "@/hooks/use-room-availability";
 
 const PropertyDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -86,6 +92,14 @@ const PropertyDetail = () => {
     enabled: !!property?.owner_id,
   });
 
+  // Must sit ABOVE the loading/not-found early returns below — a hook called
+  // after a conditional `return` changes the hook order between renders. The
+  // query self-disables when there is no nightly unit to ask about, so passing
+  // an empty list while `property` loads costs nothing.
+  const { data: bookedRanges } = useRoomBookedRanges(
+    property ? [{ id: property.id, type: property.type }] : [],
+  );
+
   // Separate from the increment-view effect above, which fires on the id alone:
   // this one waits for the row so the event carries the type/district/price that
   // make "what do people actually look at?" answerable. Keyed on property.id, not
@@ -140,13 +154,19 @@ const PropertyDetail = () => {
   }
 
   const imageUrls = images?.map((img) => img.image_url) || [];
-  const isHotel = property.type === "hotel";
+  // Two different questions that used to share one `isHotel` flag: how the
+  // price reads, and whether a visitor can reserve it. A BnB answers both the
+  // way a hotel room does — see src/lib/property-kind.ts.
+  const isNightly = isNightlyRateType(property.type);
+  const isBookable = isBookableType(property.type);
+  /** The date a confirmed stay frees this room up, or null if free tonight. */
+  const takenUntil = bookedUntil(bookedRanges?.[property.id] ?? []);
 
   // ── SEO ──────────────────────────────────────────────────────────────────
   // Everything below runs only after the query resolved AND returned a row, so
   // this page never emits a canonical for a URL that is really a 404 — a
   // canonical on a dead listing is an invitation to index it.
-  const priceUnit = isHotel ? "night" : "month";
+  const priceUnit = isNightly ? "night" : "month";
   const seoTitle = buildTitle(
     `${property.title} — $${property.price.toLocaleString()}/${priceUnit} in ${property.location}, Mogadishu`,
   );
@@ -162,7 +182,7 @@ const PropertyDetail = () => {
   const seoDescription = truncate(
     property.description ||
       [
-        `${propertyTypeLabel(property.type)} for rent in ${property.location}, Mogadishu`,
+        `${propertyTypeLabel(property.type)}${property.purpose === "sell" ? " for sale" : " for rent"} in ${property.location}, Mogadishu`,
         rooms && ` — ${rooms}`,
         `. $${property.price.toLocaleString()} per ${priceUnit}. Guri kiro ah. View photos and contact us on WhatsApp.`,
       ].filter(Boolean).join(""),
@@ -180,6 +200,40 @@ const PropertyDetail = () => {
     property.has_parking && { icon: Car, label: "Parking Available", color: "bg-success/10 text-success" },
     property.is_furnished && { icon: Armchair, label: "Furnished", color: "bg-primary/10 text-primary" },
     property.has_elevator && { icon: () => <span role="img" aria-label="Elevator">🛗</span>, label: "Elevator", color: "bg-primary/10 text-primary" },
+    // Hotel amenities (20260902000002)
+    property.has_free_wifi && { icon: Wifi, label: "Free WiFi", color: "bg-info/10 text-info" },
+    property.has_coffee_shop && { icon: Coffee, label: "Coffee Shop", color: "bg-warning/10 text-warning" },
+    property.has_airport_transport && { icon: PlaneTakeoff, label: "Airport Transportation", color: "bg-info/10 text-info" },
+    property.has_business_center && { icon: Briefcase, label: "Business Center", color: "bg-hotel/10 text-hotel" },
+    property.has_banquet_room && { icon: Users, label: "Banquet Room", color: "bg-primary/10 text-primary" },
+    property.is_all_inclusive && { icon: Sparkles, label: "All Inclusive", color: "bg-accent/10 text-accent" },
+    property.has_24h_security && { icon: ShieldCheck, label: "24-Hour Security", color: "bg-destructive/10 text-destructive" },
+    property.has_secured_parking && { icon: CarFront, label: "Secured Parking", color: "bg-success/10 text-success" },
+    property.has_restaurant && { icon: Utensils, label: "Restaurant", color: "bg-warning/10 text-warning" },
+    property.has_breakfast && { icon: Sun, label: "Breakfast Available", color: "bg-accent/10 text-accent" },
+    property.has_breakfast_buffet && { icon: UtensilsCrossed, label: "Breakfast Buffet", color: "bg-warning/10 text-warning" },
+    property.has_shuttle && { icon: Bus, label: "Shuttle Bus Service", color: "bg-info/10 text-info" },
+    property.has_car_hire && { icon: Car, label: "Car Hire", color: "bg-primary/10 text-primary" },
+    property.has_meeting_rooms && { icon: Landmark, label: "Meeting Rooms", color: "bg-hotel/10 text-hotel" },
+    property.has_24h_front_desk && { icon: Clock, label: "24-Hour Front Desk", color: "bg-success/10 text-success" },
+    property.has_express_checkout && { icon: CheckCircle2, label: "Express Check-in/Out", color: "bg-info/10 text-info" },
+    property.has_clothes_dryer && { icon: Wind, label: "Clothes Dryer", color: "bg-primary/10 text-primary" },
+    property.has_laundry && { icon: Shirt, label: "Laundry Service", color: "bg-info/10 text-info" },
+    // In-room features (20260902000003)
+    property.has_air_conditioning && { icon: Snowflake, label: "Air Conditioning", color: "bg-info/10 text-info" },
+    property.has_desk && { icon: Laptop, label: "Desk", color: "bg-primary/10 text-primary" },
+    property.has_housekeeping && { icon: Sparkles, label: "Housekeeping", color: "bg-accent/10 text-accent" },
+    property.has_room_service && { icon: ConciergeBell, label: "Room Service", color: "bg-warning/10 text-warning" },
+    property.has_refrigerator && { icon: Refrigerator, label: "Refrigerator", color: "bg-success/10 text-success" },
+    property.has_cable_tv && { icon: Tv, label: "Cable / Satellite TV", color: "bg-primary/10 text-primary" },
+    property.has_flatscreen_tv && { icon: MonitorPlay, label: "Flatscreen TV", color: "bg-info/10 text-info" },
+    property.has_bath_shower && { icon: ShowerHead, label: "Bath / Shower", color: "bg-accent/10 text-accent" },
+    property.has_safe && { icon: Vault, label: "In-Room Safe", color: "bg-success/10 text-success" },
+    property.has_telephone && { icon: PhoneIcon, label: "Telephone", color: "bg-muted-foreground/10 text-muted-foreground" },
+    property.has_vip_facilities && { icon: Crown, label: "VIP Room Facilities", color: "bg-warning/10 text-warning" },
+    property.has_bottled_water && { icon: GlassWater, label: "Bottled Water", color: "bg-info/10 text-info" },
+    property.has_iron && { icon: Droplets, label: "Iron", color: "bg-primary/10 text-primary" },
+    property.has_toiletries && { icon: SprayCan, label: "Complimentary Toiletries", color: "bg-accent/10 text-accent" },
   ].filter(Boolean) as { icon: React.ElementType; label: string; color: string }[];
 
   return (
@@ -219,6 +273,38 @@ const PropertyDetail = () => {
             isFurnished: property.is_furnished,
             hasElevator: property.has_elevator,
             hasBalcony: property.has_balcony,
+            hasFreeWifi: property.has_free_wifi,
+            hasCoffeeShop: property.has_coffee_shop,
+            hasAirportTransport: property.has_airport_transport,
+            hasBusinessCenter: property.has_business_center,
+            hasBanquetRoom: property.has_banquet_room,
+            isAllInclusive: property.is_all_inclusive,
+            has24hSecurity: property.has_24h_security,
+            hasSecuredParking: property.has_secured_parking,
+            hasRestaurant: property.has_restaurant,
+            hasBreakfast: property.has_breakfast,
+            hasBreakfastBuffet: property.has_breakfast_buffet,
+            hasShuttle: property.has_shuttle,
+            hasCarHire: property.has_car_hire,
+            hasMeetingRooms: property.has_meeting_rooms,
+            has24hFrontDesk: property.has_24h_front_desk,
+            hasExpressCheckout: property.has_express_checkout,
+            hasClothesDryer: property.has_clothes_dryer,
+            hasLaundry: property.has_laundry,
+            hasAirConditioning: property.has_air_conditioning,
+            hasDesk: property.has_desk,
+            hasHousekeeping: property.has_housekeeping,
+            hasRoomService: property.has_room_service,
+            hasRefrigerator: property.has_refrigerator,
+            hasCableTv: property.has_cable_tv,
+            hasFlatscreenTv: property.has_flatscreen_tv,
+            hasBathShower: property.has_bath_shower,
+            hasSafe: property.has_safe,
+            hasTelephone: property.has_telephone,
+            hasVipFacilities: property.has_vip_facilities,
+            hasBottledWater: property.has_bottled_water,
+            hasIron: property.has_iron,
+            hasToiletries: property.has_toiletries,
             createdAt: property.created_at,
           }),
           breadcrumbLd([
@@ -258,6 +344,11 @@ const PropertyDetail = () => {
                   {property.type === "hotel" ? <Hotel className="w-3 h-3 mr-1" /> : <Home className="w-3 h-3 mr-1" />}
                   {propertyTypeLabel(property.type)}
                 </Badge>
+                {property.purpose === "sell" && (
+                  <Badge className={`${purposeClass(property.purpose)} text-[10px] font-bold rounded-full px-2.5`}>
+                    For Sale
+                  </Badge>
+                )}
                 {property.is_available ? (
                   <Badge className="bg-success/10 text-success border-success/20 text-[10px] rounded-full">Available</Badge>
                 ) : (
@@ -276,14 +367,15 @@ const PropertyDetail = () => {
             <div className="flex items-center gap-6 p-5 rounded-2xl bg-card border border-border shadow-card">
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
-                  {isHotel ? "Nightly Rate" : "Monthly Rent"}
+                  {property.purpose === "sell" ? "Sale Price" : isNightly ? "Nightly Rate" : "Monthly Rent"}
                 </p>
                 <p className="text-3xl font-heading font-bold text-foreground">
                   <span className="text-primary">${property.price.toLocaleString()}</span>
-                  <span className="text-base font-normal text-muted-foreground">/{isHotel ? "night" : "mo"}</span>
+                  <span className="text-base font-normal text-muted-foreground">/{property.purpose === "sell" ? "one-time" : isNightly ? "night" : "mo"}</span>
                 </p>
               </div>
               <div className="h-12 w-px bg-border" />
+              {property.purpose !== "sell" && (
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1">
                   <Shield className="w-3 h-3" /> Deposit
@@ -292,6 +384,7 @@ const PropertyDetail = () => {
                   ${property.deposit.toLocaleString()}
                 </p>
               </div>
+            )}
             </div>
 
             {/* Description */}
@@ -340,11 +433,25 @@ const PropertyDetail = () => {
 
                     {/* Sidebar */}
           <div className="space-y-6">
-            {/* Public booking request — only nightly-rate hotel rooms are
-                bookable, and only while the unit is available. Uses the secure
+            {/* Taken tonight — but the form stays, because the guest can still
+                book from the day it frees up. Hiding the form here would be the
+                same mistake as dropping the listing from search. */}
+            {isBookable && takenUntil && (
+              <div className="p-4 rounded-2xl bg-muted/50 border border-border flex items-start gap-2.5">
+                <CalendarClock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                <p className="text-sm text-foreground">
+                  Booked until{" "}
+                  <span className="font-semibold">{formatBookedUntil(takenUntil)}</span>.
+                  <span className="text-muted-foreground"> You can book from that date onwards.</span>
+                </p>
+              </div>
+            )}
+
+            {/* Public booking request — only nightly-rate units are bookable,
+                and only while the unit is available. Uses the secure
                 create_booking_request RPC so a visitor never touches org_id or
                 an amount (20260807000001). */}
-            {isHotel && property.is_available && (
+            {isBookable && property.is_available && (
               <BookingRequestForm
                 roomId={property.id}
                 roomTitle={property.title}
@@ -386,7 +493,7 @@ const PropertyDetail = () => {
               `🏠 *${property.title}*\n` +
               `📍 Location: ${property.location}\n` +
               `🏷️ Type: ${propertyTypeLabel(property.type)}\n` +
-              `💰 Price: $${property.price.toLocaleString()}/${property.type === 'hotel' ? 'night' : 'mo'}\n` +
+              `💰 Price: $${property.price.toLocaleString()}/${property.purpose === "sell" ? "one-time" : property.type === 'hotel' ? 'night' : 'mo'}\n` +
               `💵 Deposit: $${property.deposit.toLocaleString()}\n` +
               (property.bedrooms ? `🛏️ Bedrooms: ${property.bedrooms}\n` : '') +
               (property.toilets ? `🚿 Bathrooms: ${property.toilets}\n` : '') +

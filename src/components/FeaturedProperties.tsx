@@ -12,10 +12,12 @@ import { useFavorites } from "@/hooks/use-favorites";
 import {
   ChevronLeft, ChevronRight, Search, SlidersHorizontal, MapPin, X,
   DollarSign, Bed, Car, Cctv, Waves, ArrowUpDown, Home, Building2, Hotel, Briefcase,
-  Armchair, CalendarDays, Shuffle,
+  Armchair, CalendarDays, Shuffle, BedDouble,
+  Snowflake, Refrigerator, ConciergeBell,
 } from "lucide-react";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import type { Property, PropertyType } from "@/lib/types";
+import { useRoomBookedRanges, bookedUntil } from "@/hooks/use-room-availability";
 
 interface RawPropertyRecord {
   id: string;
@@ -32,6 +34,7 @@ interface RawPropertyRecord {
   is_listed?: boolean;
   occupancy_status?: string;
   is_daily_rate?: boolean;
+  purpose?: string;
   bedrooms?: number;
   living_rooms?: number;
   kitchens?: number;
@@ -41,6 +44,9 @@ interface RawPropertyRecord {
   floor_number?: number;
   has_balcony?: boolean;
   is_furnished?: boolean;
+  has_air_conditioning?: boolean;
+  has_refrigerator?: boolean;
+  has_room_service?: boolean;
   property_images?: Array<{ image_url: string; sort_order?: number }>;
 }
 
@@ -51,6 +57,7 @@ const typeFilters = [
   { value: "villa", label: "Houses", icon: Home },
   { value: "apartment", label: "Apartments", icon: Building2 },
   { value: "hotel", label: "Hotels", icon: Hotel },
+  { value: "bnb", label: "BnB", icon: BedDouble },
   { value: "commercial", label: "Commercial", icon: Briefcase },
 ];
 
@@ -102,19 +109,23 @@ const FeaturedProperties = () => {
       const from = page * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
-      // Query properties where is_listed = true AND occupancy_status = 'vacant'
+      // `is_available` is the ONLY visibility gate.
+      //
+      // It used to be checked alongside is_listed and occupancy_status here,
+      // which re-implemented the rule client-side and got it wrong for nightly
+      // units: a hotel room or BnB marked occupied vanished from the
+      // marketplace even though it is still bookable for every later date.
+      // 20260820000001 derives is_available in a database trigger, per type
+      // (nightly = listed; monthly = listed AND vacant), so one condition here
+      // is both correct and impossible to drift from.
       const { count } = await supabase
         .from("properties")
         .select("id", { count: "exact", head: true })
-        .or("is_listed.eq.true,is_listed.is.null")
-        .or("occupancy_status.eq.vacant,occupancy_status.is.null")
         .eq("is_available", true);
 
       const { data, error } = await supabase
         .from("properties")
         .select("*, property_images(image_url, sort_order)")
-        .or("is_listed.eq.true,is_listed.is.null")
-        .or("occupancy_status.eq.vacant,occupancy_status.is.null")
         .eq("is_available", true)
         .order("created_at", { ascending: false })
         .range(from, to);
@@ -128,11 +139,9 @@ const FeaturedProperties = () => {
 
   const rawProperties: Property[] = (data?.items || [])
     .filter((p) => {
-      // Hard requirement: only show properties where is_listed = true AND occupancy_status = 'vacant'
-      const isListed = p.is_listed !== false;
-      const isVacant = p.occupancy_status ? p.occupancy_status === "vacant" : p.is_available !== false;
-      if (!isListed || !isVacant) return false;
-
+      // No occupancy re-check here — see the query above. A nightly unit that
+      // is booked tonight still belongs in the results; the card says "Booked
+      // till <date>" instead of the listing disappearing.
       if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase()) && !p.location.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (activeType && p.type !== activeType) return false;
       if (district && district !== "all" && p.location !== district) return false;
@@ -144,6 +153,9 @@ const FeaturedProperties = () => {
       if (amenities.includes("balcony") && !p.has_balcony) return false;
       if (amenities.includes("furnished") && !p.is_furnished) return false;
       if (amenities.includes("daily_rate") && !p.is_daily_rate) return false;
+      if (amenities.includes("air_conditioning") && !p.has_air_conditioning) return false;
+      if (amenities.includes("refrigerator") && !p.has_refrigerator) return false;
+      if (amenities.includes("room_service") && !p.has_room_service) return false;
       return true;
     })
     .map((p) => ({
@@ -162,6 +174,7 @@ const FeaturedProperties = () => {
       created_at: p.created_at,
       is_available: p.is_available ?? true,
       is_daily_rate: p.is_daily_rate,
+      purpose: p.purpose as "rent" | "sell" | undefined,
       bedrooms: p.bedrooms,
       living_rooms: p.living_rooms,
       kitchens: p.kitchens,
@@ -189,6 +202,12 @@ const FeaturedProperties = () => {
     // Default "randomized": randomize explore ordering
     return shuffleArray(rawProperties);
   }, [rawProperties, sortBy]);
+
+  // One RPC for every nightly unit on the page, not one per card. The mapping
+  // above rewrites only villa→house, so "hotel"/"bnb" survive it intact and
+  // `isBookableType` inside the hook still recognises them.
+  const { data: bookedRanges } = useRoomBookedRanges(properties);
+  const bookedUntilFor = (id: string) => bookedUntil(bookedRanges?.[id] ?? []);
 
   if (!isLoading && (data?.items || []).length === 0 && page === 0) return null;
 
@@ -300,6 +319,9 @@ const FeaturedProperties = () => {
                       { key: "balcony", label: "Balcony", icon: Waves },
                       { key: "furnished", label: "Furnished", icon: Armchair },
                       { key: "daily_rate", label: "Daily Rate", icon: CalendarDays },
+                      { key: "air_conditioning", label: "Air Conditioning", icon: Snowflake },
+                      { key: "refrigerator", label: "Refrigerator", icon: Refrigerator },
+                      { key: "room_service", label: "Room Service", icon: ConciergeBell },
                     ].map((a) => (
                       <button
                         key={a.key}
@@ -415,6 +437,7 @@ const FeaturedProperties = () => {
                       isFavorite={isFavorite(property.id)}
                       onToggleFavorite={toggleFavorite}
                       isAuthenticated={isAuthenticated}
+                      bookedUntil={bookedUntilFor(property.id)}
                     />
                   </motion.div>
                 ))}

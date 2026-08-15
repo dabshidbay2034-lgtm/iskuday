@@ -25,6 +25,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { motion } from "framer-motion";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { useAppAuth } from "@/hooks/use-auth";
+import { accountKind } from "@/lib/account-type";
 import { useClerk } from "@clerk/clerk-react";
 import type { Database } from "@/integrations/supabase/types";
 import { propertyTypeClass, propertyTypeLabel } from "@/lib/property-display";
@@ -44,7 +45,9 @@ type TabType = "listings";
 const Dashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { userId, isSignedIn, user } = useAppAuth();
+  const { userId, isSignedIn, user, platformRole } = useAppAuth();
+  // A hotel account's listings are rooms, not properties.
+  const isHotelAccount = accountKind(platformRole) === "hotel";
   const { signOut } = useClerk();
   const [tab, setTab] = useState<TabType>("listings");
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -256,9 +259,11 @@ const Dashboard = () => {
         {tab === "listings" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="font-heading font-semibold text-foreground">Your Properties</h2>
+              <h2 className="font-heading font-semibold text-foreground">
+                {isHotelAccount ? "Your Rooms" : "Your Properties"}
+              </h2>
               <Button size="sm" onClick={() => navigate("/add-property")}>
-                <Plus className="w-4 h-4" /> Add New
+                <Plus className="w-4 h-4" /> {isHotelAccount ? "Add Room" : "Add New"}
               </Button>
             </div>
 
@@ -269,9 +274,14 @@ const Dashboard = () => {
             {!propsLoading && properties?.length === 0 && (
               <div className="text-center py-16 bg-card rounded-2xl border border-border">
                 <Home className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground mb-4">You haven't listed any properties yet.</p>
+                <p className="text-muted-foreground mb-4">
+                  {isHotelAccount
+                    ? "You haven't added any rooms yet."
+                    : "You haven't listed any properties yet."}
+                </p>
                 <Button variant="hero" onClick={() => navigate("/add-property")}>
-                  <Plus className="w-4 h-4" /> List Your First Property
+                  <Plus className="w-4 h-4" />{" "}
+                  {isHotelAccount ? "Add Your First Room" : "List Your First Property"}
                 </Button>
               </div>
             )}
@@ -308,6 +318,11 @@ const Dashboard = () => {
                       <Badge className={`${propertyTypeClass(p.type)} text-[9px] uppercase tracking-wider font-semibold rounded-full px-2`}>
                         {propertyTypeLabel(p.type)}
                       </Badge>
+                      {(p as { purpose?: string }).purpose === "sell" && (
+                        <Badge className="bg-warning/15 text-warning border-0 text-[9px] font-bold rounded-full px-2">
+                          For Sale
+                        </Badge>
+                      )}
                       {p.is_available ? (
                         <Badge className="bg-success/10 text-success border-success/20 text-[9px] rounded-full">Active</Badge>
                       ) : (

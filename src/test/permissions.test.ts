@@ -23,13 +23,21 @@ describe('staff permission model', () => {
     // Every `*_VIEW` permission, and nothing else. Keep this list in step with
     // PERMISSIONS — a new view permission belongs here, a new mutating one does
     // not, and the loop below fails either way if the two drift apart.
+
+
+
+
+
+
+
     const READ_ONLY: Permission[] = [
-      PERMISSIONS.RENT_VIEW,
-      PERMISSIONS.UTILITIES_VIEW,
-      PERMISSIONS.MAINTENANCE_VIEW,
-      PERMISSIONS.EXPENSES_VIEW,
-      PERMISSIONS.LEASE_VIEW,
-    ];
+          PERMISSIONS.RENT_VIEW,
+          PERMISSIONS.UTILITIES_VIEW,
+          PERMISSIONS.MAINTENANCE_VIEW,
+          PERMISSIONS.EXPENSES_VIEW,
+          PERMISSIONS.LEASE_VIEW,
+          PERMISSIONS.BOOKING_VIEW,
+        ];
 
     for (const permission of ALL_PERMISSIONS) {
       expect(hasPermission(STAFF_ROLES.VIEWER, permission)).toBe(

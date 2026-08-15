@@ -1,15 +1,6 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from 'vitest';
 import posthog from 'posthog-js';
-import {
-  ANALYTICS_EVENTS,
-  analyticsEnabled,
-  captureException,
-  identifyUser,
-  resetUser,
-  track,
-  trackPageview,
-  type AnalyticsEvent,
-} from '@/lib/analytics';
+import type { AnalyticsEvent } from '@/lib/analytics';
 
 vi.mock('posthog-js', () => ({
   default: {
@@ -21,7 +12,30 @@ vi.mock('posthog-js', () => ({
   },
 }));
 
-const ALL_EVENTS = Object.values(ANALYTICS_EVENTS) as AnalyticsEvent[];
+// The module is imported dynamically below so its module-scope
+// `analyticsEnabled = Boolean(import.meta.env.VITE_POSTHOG_KEY)` is computed
+// with a cleared env — otherwise a developer's local VITE_POSTHOG_KEY silently
+// flips the "no key" tests into the live-PostHog path and they fail.
+//
+// Only `import type` is used above, so @/lib/analytics is NOT loaded by this
+// file's top-level imports — the dynamic import below is its first load, and
+// vi.stubEnv() makes Vite resolve import.meta.env from the stubbed value
+// instead of the shell's real env. (We deliberately do NOT call
+// vi.resetModules() here: it would also purge the posthog-js mock, and the
+// assertions inspect posthog.capture/identify/reset below.)
+let analytics: typeof import('@/lib/analytics');
+let ALL_EVENTS: AnalyticsEvent[];
+
+beforeAll(async () => {
+  vi.stubEnv('VITE_POSTHOG_KEY', '');
+  vi.stubEnv('VITE_POSTHOG_HOST', '');
+  analytics = await import('@/lib/analytics');
+  ALL_EVENTS = Object.values(analytics.ANALYTICS_EVENTS) as AnalyticsEvent[];
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('analytics event catalog', () => {
   it('names every event in snake_case, with no duplicates', () => {
@@ -62,16 +76,16 @@ describe('analytics helpers without a PostHog key', () => {
   // The whole point of the no-key path: a fresh clone and CI run with no
   // VITE_POSTHOG_KEY, and nothing may break or phone home.
   it('is disabled when no key is configured', () => {
-    expect(analyticsEnabled).toBe(false);
+    expect(analytics.analyticsEnabled).toBe(false);
   });
 
   it('never calls PostHog and never throws', () => {
     expect(() => {
-      track(ANALYTICS_EVENTS.PROPERTY_VIEWED, { property_id: 'abc' });
-      trackPageview('/properties');
-      identifyUser('user_123', { platform_role: 'owner' });
-      resetUser();
-      captureException(new Error('boom'), { path: '/' });
+      analytics.track(analytics.ANALYTICS_EVENTS.PROPERTY_VIEWED, { property_id: 'abc' });
+      analytics.trackPageview('/properties');
+      analytics.identifyUser('user_123', { platform_role: 'owner' });
+      analytics.resetUser();
+      analytics.captureException(new Error('boom'), { path: '/' });
     }).not.toThrow();
 
     expect(posthog.capture).not.toHaveBeenCalled();
@@ -81,7 +95,7 @@ describe('analytics helpers without a PostHog key', () => {
   });
 
   it('ignores an empty user id rather than identifying an anonymous visitor', () => {
-    identifyUser('', { platform_role: 'user' });
+    analytics.identifyUser('', { platform_role: 'user' });
     expect(posthog.identify).not.toHaveBeenCalled();
   });
 });

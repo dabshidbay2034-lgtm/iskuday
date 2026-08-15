@@ -34,6 +34,8 @@ export type HotelInvite = {
   hotelId: string;
   email: string;
   role: HotelRole;
+  /** Task permissions carried into membership upon acceptance (20260830000001) */
+  permissions: string[];
   invitedBy: string | null;
   createdAt: string | null;
   expiresAt: string | null;
@@ -56,6 +58,7 @@ type RawHotelInvite = {
   hotel_id: string;
   email: string;
   role: string | null;
+  permissions: string[] | null;
   invited_by: string | null;
   created_at: string | null;
   expires_at: string | null;
@@ -75,8 +78,9 @@ function toInvite(row: RawHotelInvite): HotelInvite {
     hotelId: row.hotel_id,
     email: row.email,
     // Same reasoning as use-hotel-members: the CHECK constraint guarantees one
-    // of the three, and the fallback is the harmless one.
+    // of the four, and the fallback is the harmless one.
     role: (row.role as HotelRole) ?? "viewer",
+    permissions: row.permissions ?? [],
     invitedBy: row.invited_by ?? null,
     createdAt: row.created_at ?? null,
     expiresAt: row.expires_at ?? null,
@@ -195,6 +199,8 @@ function describeInviteError(error: unknown, fallback: string): string {
 export type HotelInviteInput = {
   email: string;
   role: HotelRole;
+  /** Explicit task permissions beyond role defaults (optional). */
+  permissions?: string[];
 };
 
 /** Invite someone onto this hotel's team by email address. */
@@ -212,14 +218,15 @@ export function useInviteToHotel(hotelId?: string) {
       if (!email) throw new Error("Enter an email address.");
 
       const { data, error } = await looseFrom("hotel_invites")
-        .insert({
-          hotel_id: hotelId,
-          email,
-          role: input.role,
-          invited_by: userId ?? null,
-        })
-        .select("*")
-        .single();
+              .insert({
+                hotel_id: hotelId,
+                email,
+                role: input.role,
+                permissions: input.permissions ?? [],
+                invited_by: userId ?? null,
+              })
+              .select("*")
+              .single();
       if (error) throw error;
       return toInvite(data as RawHotelInvite);
     },

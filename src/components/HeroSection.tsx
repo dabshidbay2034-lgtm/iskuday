@@ -15,6 +15,7 @@ const PROPERTY_TYPES = [
   { value: "villa", label: "House" },
   { value: "apartment", label: "Apartment" },
   { value: "hotel", label: "Hotel" },
+  { value: "bnb", label: "BnB" },
   { value: "commercial", label: "Commercial" },
 ];
 

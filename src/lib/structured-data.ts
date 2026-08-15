@@ -46,6 +46,7 @@
  */
 
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
+import { isNightlyRateType } from "@/lib/property-kind";
 
 // ── Site constants ───────────────────────────────────────────────────────────
 
@@ -375,6 +376,40 @@ export interface PropertyListingLdInput {
   isFurnished?: boolean | null;
   hasElevator?: boolean | null;
   hasBalcony?: boolean | null;
+  // Hotel amenities (20260902000002)
+  hasFreeWifi?: boolean | null;
+  hasCoffeeShop?: boolean | null;
+  hasAirportTransport?: boolean | null;
+  hasBusinessCenter?: boolean | null;
+  hasBanquetRoom?: boolean | null;
+  isAllInclusive?: boolean | null;
+  has24hSecurity?: boolean | null;
+  hasSecuredParking?: boolean | null;
+  hasRestaurant?: boolean | null;
+  hasBreakfast?: boolean | null;
+  hasBreakfastBuffet?: boolean | null;
+  hasShuttle?: boolean | null;
+  hasCarHire?: boolean | null;
+  hasMeetingRooms?: boolean | null;
+  has24hFrontDesk?: boolean | null;
+  hasExpressCheckout?: boolean | null;
+  hasClothesDryer?: boolean | null;
+  hasLaundry?: boolean | null;
+  // In-room features (20260902000003)
+  hasAirConditioning?: boolean | null;
+  hasDesk?: boolean | null;
+  hasHousekeeping?: boolean | null;
+  hasRoomService?: boolean | null;
+  hasRefrigerator?: boolean | null;
+  hasCableTv?: boolean | null;
+  hasFlatscreenTv?: boolean | null;
+  hasBathShower?: boolean | null;
+  hasSafe?: boolean | null;
+  hasTelephone?: boolean | null;
+  hasVipFacilities?: boolean | null;
+  hasBottledWater?: boolean | null;
+  hasIron?: boolean | null;
+  hasToiletries?: boolean | null;
   /** ISO 8601 string (the `created_at` column). Never a Date — this gets stringified. */
   createdAt?: string | null;
   /**
@@ -406,6 +441,16 @@ function accommodationType(type?: string | null): string {
       return "Apartment";
     case "hotel":
       return "HotelRoom";
+    case "bnb":
+      // Explicit, not a fall-through, so the reasoning is on the record.
+      //
+      // schema.org's `BedAndBreakfast` is a LodgingBusiness — claiming it for a
+      // single short-let unit is the exact lie the `hotel` case above avoids,
+      // and it would assert a lodging business with no address or phone behind
+      // it. `HotelRoom` is equally wrong: a BnB is a whole flat or house, not a
+      // room within a hotel. The listing does not record which, so the honest
+      // answer is the generic parent both would inherit from.
+      return "Accommodation";
     default:
       return "Accommodation";
   }
@@ -423,7 +468,7 @@ function accommodationType(type?: string | null): string {
 export function propertyListingLd(p: PropertyListingLdInput): object {
   const listingUrl = abs(p.url) ?? `${siteUrl}/property/${p.id}`;
   const accommodationId = `${listingUrl}#accommodation`;
-  const perNight = p.isDailyRate === true || (p.type ?? "").toLowerCase() === "hotel";
+  const perNight = p.isDailyRate === true || isNightlyRateType((p.type ?? "").toLowerCase());
   const price = positive(p.price);
   const deposit = positive(p.deposit);
   const district = canonicalDistrict(p.location);
@@ -470,6 +515,38 @@ export function propertyListingLd(p: PropertyListingLdInput): object {
       Furnished: p.isFurnished,
       Elevator: p.hasElevator,
       Balcony: p.hasBalcony,
+      "Free WiFi": p.hasFreeWifi,
+      "Coffee shop": p.hasCoffeeShop,
+      "Airport transportation": p.hasAirportTransport,
+      "Business center": p.hasBusinessCenter,
+      "Banquet room": p.hasBanquetRoom,
+      "All inclusive": p.isAllInclusive,
+      "24-hour security": p.has24hSecurity,
+      "Secured parking": p.hasSecuredParking,
+      Restaurant: p.hasRestaurant,
+      "Breakfast available": p.hasBreakfast,
+      "Breakfast buffet": p.hasBreakfastBuffet,
+      "Shuttle bus service": p.hasShuttle,
+      "Car hire": p.hasCarHire,
+      "Meeting rooms": p.hasMeetingRooms,
+      "24-hour front desk": p.has24hFrontDesk,
+      "Express check-in/out": p.hasExpressCheckout,
+      "Clothes dryer": p.hasClothesDryer,
+      "Laundry service": p.hasLaundry,
+      "Air conditioning": p.hasAirConditioning,
+      Desk: p.hasDesk,
+      Housekeeping: p.hasHousekeeping,
+      "Room service": p.hasRoomService,
+      Refrigerator: p.hasRefrigerator,
+      "Cable / satellite TV": p.hasCableTv,
+      "Flatscreen TV": p.hasFlatscreenTv,
+      "Bath / shower": p.hasBathShower,
+      Safe: p.hasSafe,
+      Telephone: p.hasTelephone,
+      "VIP room facilities": p.hasVipFacilities,
+      "Bottled water": p.hasBottledWater,
+      Iron: p.hasIron,
+      "Complimentary toiletries": p.hasToiletries,
     }),
   };
 

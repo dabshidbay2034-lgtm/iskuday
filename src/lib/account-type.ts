@@ -30,11 +30,23 @@ import type { UserRole } from "@/lib/types";
 export type AccountKind = "agency" | "hotel" | "landlord" | "platform" | "none";
 
 /** The `properties.type` values as stored in Postgres (note `villa`, not `house`). */
-export type DbPropertyType = "villa" | "apartment" | "hotel" | "commercial";
+export type DbPropertyType = "villa" | "apartment" | "hotel" | "bnb" | "commercial";
 
-const RENTAL_TYPES: DbPropertyType[] = ["villa", "apartment", "commercial"];
+/**
+ * A BnB is a RENTAL type, not a hotel type.
+ *
+ * It is billed nightly and takes bookings like a hotel room, but it belongs to
+ * a landlord's portfolio rather than to a hotel business — so an agency or a
+ * solo owner lists one, and a hotel account does not. That also means it needs
+ * no change to the account-type trigger in 20260812000002, whose rule is
+ * "hotel ⇔ hotel_manager": `bnb` falls on the non-hotel side by construction.
+ *
+ * What makes it nightly and bookable lives in ./property-kind.ts; this list is
+ * only about who may CREATE one.
+ */
+const RENTAL_TYPES: DbPropertyType[] = ["villa", "apartment", "bnb", "commercial"];
 const HOTEL_TYPES: DbPropertyType[] = ["hotel"];
-const ALL_TYPES: DbPropertyType[] = ["villa", "apartment", "hotel", "commercial"];
+const ALL_TYPES: DbPropertyType[] = ["villa", "apartment", "hotel", "bnb", "commercial"];
 
 export function accountKind(role: UserRole | null | undefined): AccountKind {
   switch (role) {
@@ -99,7 +111,7 @@ export function wrongAccountTypeMessage(role: UserRole | null | undefined): stri
       return "Hotel accounts list hotel rooms. To rent out houses or apartments, switch your account type in Settings.";
     case "agency":
     case "landlord":
-      return "Rental accounts list houses, apartments and commercial space. To list hotel rooms, switch to a Hotel account in Settings.";
+      return "Rental accounts list houses, apartments, BnB and commercial space. To list hotel rooms, switch to a Hotel account in Settings.";
     default:
       return "Your account can't list properties yet. Choose an account type in Settings.";
   }

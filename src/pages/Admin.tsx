@@ -654,12 +654,13 @@ const PropertyEditForm = ({
         </div>
         <div>
           <Label htmlFor="type">Type</Label>
-          <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({ ...prev, type: value as "villa" | "apartment" | "hotel" | "commercial" }))}>
+          <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({ ...prev, type: value as "villa" | "apartment" | "hotel" | "bnb" | "commercial" }))}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="villa">House</SelectItem>
               <SelectItem value="apartment">Apartment</SelectItem>
               <SelectItem value="hotel">Hotel</SelectItem>
+              <SelectItem value="bnb">BnB</SelectItem>
               <SelectItem value="commercial">Commercial</SelectItem>
             </SelectContent>
           </Select>

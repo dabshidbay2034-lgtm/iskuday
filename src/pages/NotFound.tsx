@@ -33,6 +33,10 @@ const NotFound = () => {
         <a href="/" className="text-primary underline hover:text-primary/90">
           Return to Home
         </a>
+        <span className="text-muted-foreground mx-2">·</span>
+        <a href="/showcase" className="text-primary underline hover:text-primary/90">
+          Platform Overview
+        </a>
       </div>
     </div>
   );

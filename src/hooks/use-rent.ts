@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
 import { useStaff } from "@/hooks/use-staff";
 import { PERMISSIONS } from "@/lib/permissions";
+import { isNightlyRateType } from "@/lib/property-kind";
 
 /**
  * Rent ledger data layer for the /manage surface (docs/PLAN_PMS_SERVICES.md §3).
@@ -366,6 +367,10 @@ export type PropertyAccess = {
   canViewBookings: boolean;
   /** Create/update/check-in/check-out/cancel bookings (+ housekeeping). */
   canManageBookings: boolean;
+  /** Read/write the agency-private notes on this unit (`property_private`). */
+  canManageNotes: boolean;
+  /** Record the tenant and lease dates for this unit. */
+  canManageTenants: boolean;
 };
 
 /**
@@ -407,6 +412,12 @@ export function usePropertyAccess(property?: ManagedProperty | null): PropertyAc
       canViewLeases: isSoloOwner || can(PERMISSIONS.LEASE_VIEW),
       canViewBookings: isSoloOwner || can(PERMISSIONS.BOOKING_VIEW),
       canManageBookings: isSoloOwner || can(PERMISSIONS.BOOKING_MANAGE),
+      // Both cards previously called `can()` directly, which is the org matrix
+      // and returns false for every solo landlord — so a landlord would have
+      // seen their own notes and tenant record read-only on their own unit.
+      // Routed through the same isSoloOwner rule as everything else here.
+      canManageNotes: isSoloOwner || can(PERMISSIONS.NOTES_MANAGE),
+      canManageTenants: isSoloOwner || can(PERMISSIONS.TENANTS_MANAGE),
   };
 }
 
@@ -744,14 +755,40 @@ export function useSetOccupancy(property?: ManagedProperty | null) {
   return useMutation({
     mutationFn: async (status: OccupancyStatus) => {
       if (!property) throw new Error("No property selected.");
+
+      // ── NIGHTLY UNITS ARE NEVER UNLISTED BY OCCUPANCY ──────────────────────
+      // A hotel room or BnB booked tonight is still bookable next week, so
+      // taking it off the marketplace loses every future booking to hide a
+      // stay that ends on Friday. For those types occupancy is bookkeeping
+      // only; whether the room is free is answered by confirmed bookings
+      // (room_booked_ranges, 20260820000001) and shown as "Booked till <date>".
+      const nightly = isNightlyRateType(property.type);
+
+      // Occupied leaves the marketplace and stays in the ledger (plan R-3).
+      // Going vacant does NOT silently re-advertise — that is `useSetListed`,
+      // a deliberate act by the owner.
+      const nextListed = !nightly && status === "occupied" ? false : property.isListed;
+
       const { error } = await pmsDb
         .from("properties")
         .update({
           occupancy_status: status,
-          // An occupied unit must leave the marketplace but stay in the ledger
-          // (plan R-3). Freeing it up does not re-advertise it automatically —
-          // that stays a deliberate publish action.
-          ...(status === "occupied" ? { is_listed: false } : {}),
+          ...(!nightly && status === "occupied" ? { is_listed: false } : {}),
+          // `is_available` MUST be recomputed here, not left alone.
+          //
+          // It is the column the public marketplace filters on, and it is
+          // defined as `vacant AND listed` (AddProperty.tsx:202). This mutation
+          // used to change occupancy and is_listed while leaving is_available
+          // untouched, so the three drifted apart: a real row in production
+          // ended up vacant + is_listed=false + is_available=true, which is a
+          // state the rule says cannot exist. Derive it from the same
+          // expression every time and the drift is impossible.
+          //
+          // The database re-derives this in trg_properties_derive_availability
+          // and its answer wins. It is still sent so the optimistic local cache
+          // matches what the row will hold, rather than flickering to a stale
+          // value until the next refetch.
+          is_available: nightly ? nextListed : status === "vacant" && nextListed,
         })
         .eq("id", property.id);
       if (error) throw error;
@@ -761,9 +798,58 @@ export function useSetOccupancy(property?: ManagedProperty | null) {
       toast.success(status === "occupied" ? "Marked as occupied" : "Marked as vacant");
       queryClient.invalidateQueries({ queryKey: ["manage", "property", property?.id] });
       queryClient.invalidateQueries({ queryKey: ["manage", "properties"] });
+      // The public feed reads is_available; without this the marketplace keeps
+      // serving the old answer until its own staleTime lapses.
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      queryClient.invalidateQueries({ queryKey: ["featured-properties"] });
     },
     onError: (error: unknown) =>
       toast.error(describeWriteError(error, "Couldn't update occupancy")),
+  });
+}
+
+/**
+ * Publish / unpublish a unit on the public marketplace.
+ *
+ * THE MISSING HALF. `useSetOccupancy` sets `is_listed = false` when a unit goes
+ * occupied, and the only other writer of that column is the creation form —
+ * so nothing in the entire app could ever set it back to true. A unit marked
+ * occupied once disappeared from the marketplace permanently, with no control
+ * anywhere to bring it back and no error to explain why. The comment above
+ * described this re-listing step as "a deliberate publish action"; it was never
+ * built. This is it.
+ *
+ * Listing an OCCUPIED unit is allowed and deliberate: an owner advertising a
+ * flat whose tenant leaves next month is normal. `is_available` stays false
+ * until it is actually vacant, so it is queued rather than shown.
+ */
+export function useSetListed(property?: ManagedProperty | null) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (listed: boolean) => {
+      if (!property) throw new Error("No property selected.");
+      const { error } = await pmsDb
+        .from("properties")
+        .update({
+          is_listed: listed,
+          // Same single expression as above — one definition of "publicly
+          // visible", written in both places that can change its inputs.
+          is_available: property.occupancyStatus === "vacant" && listed,
+        })
+        .eq("id", property.id);
+      if (error) throw error;
+      return listed;
+    },
+    onSuccess: (listed) => {
+      toast.success(listed ? "Listed on the marketplace" : "Removed from the marketplace");
+      queryClient.invalidateQueries({ queryKey: ["manage", "property", property?.id] });
+      queryClient.invalidateQueries({ queryKey: ["manage", "properties"] });
+      queryClient.invalidateQueries({ queryKey: ["properties"] });
+      queryClient.invalidateQueries({ queryKey: ["featured-properties"] });
+    },
+    onError: (error: unknown) =>
+      toast.error(describeWriteError(error, "Couldn't update the listing")),
   });
 }
 

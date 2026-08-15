@@ -19,6 +19,7 @@ import {
 } from "@/components/hotel/page-sections";
 import { applyLook, type PageTemplate } from "@/components/hotel/page-templates";
 import { HotelTeamCard } from "@/components/hotel/HotelTeamCard";
+import { HotelPagesCard } from "@/components/hotel/HotelPagesCard";
 import {
   useHotel, useHotelRooms, useUpdateHotel, useSetHotelRooms,
   uploadHotelAsset, removeHotelAsset, type HotelRoomProperty,
@@ -55,7 +56,7 @@ const EditHotel = () => {
 
   const [settings, setSettings] = useState<PageSettings>({
     name: "", accentColor: "#0f766e", logoUrl: "",
-    contactPhone: "", contactWhatsapp: "", contactEmail: "", address: "", mapsUrl: "",
+    contactPhone: "", contactWhatsapp: "", contactEmail: "", address: "", district: "", mapsUrl: "",
     socials: { facebook: "", instagram: "", tiktok: "", twitter: "" },
     isPublished: false,
   });
@@ -98,6 +99,7 @@ const EditHotel = () => {
       contactWhatsapp: h.contactWhatsapp ?? "",
       contactEmail: h.contactEmail ?? "",
       address: h.address ?? "",
+      district: h.district ?? "",
       mapsUrl: h.mapsUrl ?? "",
       socials: {
         facebook: h.socials?.facebook ?? "",
@@ -328,6 +330,7 @@ const EditHotel = () => {
           contactWhatsapp: settings.contactWhatsapp,
           contactEmail: settings.contactEmail,
           address: settings.address,
+          district: settings.district,
           mapsUrl: settings.mapsUrl,
           socials: Object.fromEntries(
             Object.entries(settings.socials).filter(([, v]) => v.trim() !== ""),
@@ -451,6 +454,7 @@ const EditHotel = () => {
          deliberately outside the draft/save cycle the rest of the inspector
          lives in — inviting someone is not something you "save later". */
       team={<HotelTeamCard hotelId={hotel.id} ownerId={hotel.ownerId} />}
+      pages={<HotelPagesCard hotelId={hotel.id} slug={hotel.slug} />}
     />
   );
 

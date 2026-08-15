@@ -31,23 +31,27 @@ import { describeWriteError } from "@/hooks/use-rent";
 
 // ── Domain types ─────────────────────────────────────────────────────────────
 
-export type HotelRole = "admin" | "agent" | "viewer";
+export type HotelRole = "admin" | "manager" | "agent" | "viewer";
 
 /** Most privileged first — also the order the role picker renders in. */
-export const HOTEL_ROLE_ORDER: HotelRole[] = ["admin", "agent", "viewer"];
+export const HOTEL_ROLE_ORDER: HotelRole[] = ["admin", "manager", "agent", "viewer"];
 
 export const HOTEL_ROLES: Record<HotelRole, { label: string; description: string }> = {
   admin: {
     label: "Admin",
-    description: "Full control: edit and publish every page, and manage who else has access.",
+    description: "Full control: manage the team, edit and publish every page, manage bookings, staff, and task permissions.",
+  },
+  manager: {
+    label: "Manager",
+    description: "Manages operations: list/edit/publish rooms, manage bookings, staff, housekeeping and respond to inquiries. Cannot change team membership.",
   },
   agent: {
     label: "Agent",
-    description: "Edit and publish the hotel's pages and run the desk. Cannot change who has access.",
+    description: "Create and edit listings, publish rooms, respond to inquiries. Cannot manage staff, payroll or team membership.",
   },
   viewer: {
     label: "Viewer",
-    description: "Can see the hotel's pages, including unpublished drafts. Cannot change anything.",
+    description: "Can see the hotel's pages and data, including unpublished drafts. Cannot change anything.",
   },
 };
 
@@ -56,6 +60,8 @@ export type HotelMember = {
   /** Clerk user id. */
   userId: string;
   role: HotelRole;
+  /** Explicit task permission grants beyond role defaults (e.g. ["list", "edit"]) */
+  permissions: string[];
   invitedBy: string | null;
   createdAt: string | null;
 };
@@ -64,6 +70,7 @@ type RawHotelMember = {
   hotel_id: string;
   user_id: string;
   role: string | null;
+  permissions: string[] | null;
   invited_by: string | null;
   created_at: string | null;
 };
@@ -72,9 +79,10 @@ function toHotelMember(row: RawHotelMember): HotelMember {
   return {
     hotelId: row.hotel_id,
     userId: row.user_id,
-    // The DB CHECK constraint guarantees one of the three; the fallback only
+    // The DB CHECK constraint guarantees one of the four; the fallback only
     // matters if a future role is added to the constraint before this file.
     role: (row.role as HotelRole) ?? "viewer",
+    permissions: row.permissions ?? [],
     invitedBy: row.invited_by ?? null,
     createdAt: row.created_at ?? null,
   };
@@ -84,11 +92,59 @@ function toHotelMember(row: RawHotelMember): HotelMember {
 type LooseClient = { from: (table: string) => any };
 const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
+// ── Task permission catalog ──────────────────────────────────────────────────
+
+export const HOTEL_TASKS = {
+  list:        "list"        as const,
+  edit:        "edit"        as const,
+  publish:     "publish"     as const,
+  bookings:    "bookings"    as const,
+  inquiries:   "inquiries"   as const,
+  staff:       "staff"       as const,
+  housekeeping:"housekeeping"as const,
+} as const;
+
+export type HotelTask = (typeof HOTEL_TASKS)[keyof typeof HOTEL_TASKS];
+
+export const HOTEL_TASK_LABELS: Record<HotelTask, string> = {
+  [HOTEL_TASKS.list]:        "List new rooms / properties",
+  [HOTEL_TASKS.edit]:        "Edit pages & listings",
+  [HOTEL_TASKS.publish]:     "Publish / unpublish",
+  [HOTEL_TASKS.bookings]:    "Manage bookings & front desk",
+  [HOTEL_TASKS.inquiries]:   "Respond to inquiries",
+  [HOTEL_TASKS.staff]:       "Manage staff & payroll",
+  [HOTEL_TASKS.housekeeping]: "Manage housekeeping tasks",
+};
+
+/** Default task set each role implies. Keep in sync with the SQL helper hotel_member_allowed. */
+export const HOTEL_ROLE_DEFAULT_TASKS: Record<HotelRole, HotelTask[]> = {
+  admin:       Object.values(HOTEL_TASKS), // everything
+  manager:     ["list", "edit", "publish", "bookings", "inquiries", "staff", "housekeeping"],
+  agent:       ["list", "edit", "publish", "inquiries"],
+  viewer:      [],
+};
+
+/**
+ * Whether a member is allowed to do a given task.
+ *
+ * TRUE if the task is in the role's default set OR in the member's explicit
+ * `permissions` array.
+ */
+export function hotelMemberCan(
+  member: HotelMember | null | undefined,
+  task: HotelTask,
+): boolean {
+  if (!member) return false;
+  const defs = HOTEL_ROLE_DEFAULT_TASKS[member.role];
+  if (defs && defs.includes(task)) return true;
+  return member.permissions.includes(task);
+}
+
 // ── Role helpers ─────────────────────────────────────────────────────────────
 
-/** Matches the `hotel_managed()` membership branch: admin and agent can write. */
+/** Matches the `hotel_managed()` membership branch: admin, manager and agent can write. */
 export function hotelRoleCanEdit(role: HotelRole | null | undefined): boolean {
-  return role === "admin" || role === "agent";
+  return role === "admin" || role === "manager" || role === "agent";
 }
 
 /** Matches `hotel_member_admin()`: only an admin may change membership. */
@@ -98,6 +154,14 @@ export function hotelRoleCanManageMembers(role: HotelRole | null | undefined): b
 
 export function countHotelAdmins(members: HotelMember[] | undefined): number {
   return (members ?? []).filter((m) => m.role === "admin").length;
+}
+
+/** What tasks a member is explicitly granted beyond their role default. */
+export function hotelMemberExtraTasks(member: HotelMember): HotelTask[] {
+  const defaults = HOTEL_ROLE_DEFAULT_TASKS[member.role];
+  return member.permissions.filter((t): t is HotelTask =>
+    !defaults.includes(t as HotelTask) && t in HOTEL_TASKS
+  );
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowLeft, CalendarCheck2, ChevronDown, FolderLock, Mail, Pencil, Phone, Plus,
+  ArrowLeft, CalendarCheck2, ChevronDown, Clock, FolderLock, Mail, Pencil, Phone, Plus,
   Trash2, Users, Wallet,
 } from "lucide-react";
 
@@ -158,6 +158,11 @@ const StaffManager = () => {
             <Button variant="outline" size="sm" asChild>
               <Link to="/manage/payroll">
                 <Wallet className="w-4 h-4" /> <span className="hidden sm:inline">Payroll</span>
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/manage/attendance">
+                <Clock className="w-4 h-4" /> <span className="hidden sm:inline">Attendance</span>
               </Link>
             </Button>
             <Button variant="hero" size="sm" onClick={openCreate}>
