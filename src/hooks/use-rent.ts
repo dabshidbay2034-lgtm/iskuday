@@ -106,11 +106,16 @@ export type PortfolioSummary = {
 export function formatMoney(value?: number | null): string {
   const amount = Number(value ?? 0);
   const safe = Number.isFinite(amount) ? amount : 0;
+  // Both bounds move together. With only the maximum conditional, a half-dollar
+  // amount printed as "$1,200.5" — one decimal place on a money value, which
+  // reads as a rendering fault rather than a price. Whole amounts still drop
+  // the cents entirely, which is what the ledger wants.
+  const fractionDigits = Number.isInteger(safe) ? 0 : 2;
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: Number.isInteger(safe) ? 0 : 2,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(safe);
 }
 

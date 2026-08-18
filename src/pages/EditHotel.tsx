@@ -36,6 +36,32 @@ const DEVICES: { value: DeviceMode; Icon: typeof Monitor; label: string }[] = [
 ];
 
 /**
+ * EVERY storage URL a block references, including its descendants.
+ *
+ * Both the delete queue and the still-in-use set are built from this, so they
+ * can never disagree about what a block owns. Two things were missed by the
+ * flat `[s.imageUrl, ...s.images]` version it replaces:
+ *
+ *   • `items[].imageUrl` — a menu block's dish photos. Harmless while those
+ *     were inline data URLs (removeHotelAsset ignores anything that isn't a
+ *     hotel-assets URL), but the moment they became real uploads, deleting a
+ *     menu block would have orphaned every photo on it.
+ *   • `children` — anything inside a row/column. A hero nested in a column was
+ *     invisible to both sets, so its image was never cleaned up on delete AND
+ *     never counted as in-use, which is the combination that deletes a live
+ *     image out from under a published page.
+ */
+function imageUrlsOf(section: PageSection): string[] {
+  const own = [
+    section.imageUrl,
+    ...(section.images ?? []),
+    ...(section.items ?? []).map((i) => i.imageUrl),
+  ];
+  const nested = (section.children ?? []).flatMap(imageUrlsOf);
+  return [...own, ...nested].filter(Boolean) as string[];
+}
+
+/**
  * The hotel-page BUILDER (/manage/hotels/:id).
  *
  * You edit the page by looking at it: the canvas renders the real blocks through
@@ -235,7 +261,7 @@ const EditHotel = () => {
     const block = sections.find((s) => s.id === sid);
     // Its images become unreferenced — queue them, don't delete yet.
     if (block) {
-      const urls = [block.imageUrl, ...(block.images ?? [])].filter(Boolean) as string[];
+      const urls = imageUrlsOf(block);
       if (urls.length) setPendingDeletes((prev) => [...prev, ...urls]);
     }
     setSections((prev) => prev.filter((s) => s.id !== sid));
@@ -349,8 +375,7 @@ const EditHotel = () => {
       // references, so removing an image and putting it back before saving does
       // not delete a live object.
       const inUse = new Set<string>(
-        [settings.logoUrl, ...sections.flatMap((s) => [s.imageUrl, ...(s.images ?? [])])]
-          .filter(Boolean) as string[],
+        [settings.logoUrl, ...sections.flatMap(imageUrlsOf)].filter(Boolean) as string[],
       );
       const doomed = pendingDeletes.filter((u) => !inUse.has(u));
       if (doomed.length) {
@@ -428,6 +453,7 @@ const EditHotel = () => {
       sectionIndex={selectedIndex}
       onSectionPatch={(patch) => selected && patchSection(selected.id, patch)}
       upload={uploadForSection}
+      uploadFile={uploadOne}
       uploading={uploading}
       settings={settings}
       onSettingsChange={patchSettings}

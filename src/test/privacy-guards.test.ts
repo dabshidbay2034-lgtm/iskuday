@@ -125,6 +125,24 @@ describe('phone privacy', () => {
     ).toEqual([]);
   });
 
+  it('limits view totals to the property owner only', () => {
+    const detail = read(join(SRC, 'pages/PropertyDetail.tsx'));
+    const dashboard = read(join(SRC, 'pages/Dashboard.tsx'));
+
+    const ownerOnlyDetail = /currentUserId === property\.owner_id/.test(detail);
+    const ownerOnlyDashboard = /platformRole === "owner"/.test(dashboard);
+    const leakedToAdminOrManager =
+      /isAdmin\s*\|\|\s*isSemiAdmin|ANALYTICS_VIEW|hotel_manager/.test(detail) ||
+      /hotel_manager|semi_admin|admin/.test(dashboard);
+
+    expect(ownerOnlyDetail, 'PropertyDetail must derive visibility from the owner match.').toBe(true);
+    expect(ownerOnlyDashboard, 'Dashboard stats must be owner-only.').toBe(true);
+    expect(
+      leakedToAdminOrManager,
+      'View totals must not be exposed to admins, semi-admins, or manager roles.',
+    ).toBe(false);
+  });
+
   it('does not reference profiles.phone / phone2 / phone3 anywhere', () => {
     const offenders: string[] = [];
 

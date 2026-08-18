@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useFavorites } from "@/hooks/use-favorites";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +20,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import Seo from "@/components/Seo";
 import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
+import {
+  FACET_MIN_LISTINGS,
+  facetMatches,
+  facetSlugFor,
+  findFacet,
+  relatedFacets,
+} from "@/lib/facets";
+import { breadcrumbLd, itemListLd } from "@/lib/structured-data";
+import NotFound from "@/pages/NotFound";
 import type { Property, PropertyType } from "@/lib/types";
 import { useRoomBookedRanges, bookedUntil } from "@/hooks/use-room-availability";
 
@@ -54,9 +63,16 @@ interface RawPropertyRecord {
   property_images?: Array<{ image_url: string; sort_order?: number }>;
 }
 
+// Hotel tables are added by migration 20260808000001, but the generated
+// Supabase client in this repo does not include them yet. Use the same loose
+// client pattern as the hotel page hook to avoid a type mismatch on a row that
+// is valid at runtime but absent from the current generated definitions.
+type LooseClient = { from: (table: string) => any };
+const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
+
 const typeFilters = [
   { value: "", label: "All", icon: SlidersHorizontal },
-  { value: "villa", label: "Houses", icon: Home },
+  { value: "villa", label: "Villas", icon: Home },
   { value: "apartment", label: "Apartments", icon: Building2 },
   { value: "hotel", label: "Hotels", icon: Hotel },
   { value: "bnb", label: "BnB", icon: BedDouble },
@@ -88,7 +104,7 @@ const typeFilters = [
 
 /** Plural labels for the four real category pages, keyed on the URL value. */
 const SEO_TYPE_LABELS: Record<string, { plural: string; lower: string; forRent: boolean }> = {
-  villa: { plural: "Houses", lower: "houses", forRent: true },
+  villa: { plural: "Villas", lower: "villas", forRent: true },
   apartment: { plural: "Apartments", lower: "apartments", forRent: true },
   // "Hotels for rent" reads as a typo — hotels are booked by the night.
   hotel: { plural: "Hotels", lower: "hotel rooms", forRent: false },
@@ -139,7 +155,15 @@ function seoForFilters(params: {
   const qs = search.toString();
   // Points at the clean facet page even when noindexed, so that an inbound link
   // to someone's filtered URL still consolidates onto a page we do want ranked.
-  const canonical = absoluteUrl(`/properties${qs ? `?${qs}` : ""}`);
+  //
+  // When the combination has a path-based twin (/properties/apartments-in-hodan),
+  // that is the canonical instead. The two URLs render identical HTML, and a
+  // path segment is indexed far more willingly than a query string — so the
+  // query form exists to be linked, and the path form exists to be ranked.
+  const pathFacet = facetSlugFor({ type: type || null, district });
+  const canonical = pathFacet
+    ? absoluteUrl(`/properties/${pathFacet}`)
+    : absoluteUrl(`/properties${qs ? `?${qs}` : ""}`);
 
   const where = district ? `${district}, Mogadishu` : "Mogadishu";
   const label = type ? SEO_TYPE_LABELS[type] : null;
@@ -148,7 +172,7 @@ function seoForFilters(params: {
     ? `${label.plural}${label.forRent ? " for Rent" : ""} in ${where}`
     : `Properties for Rent in ${where}`;
 
-  const what = label ? label.lower : "houses, apartments, hotels and commercial spaces";
+  const what = label ? label.lower : "villas, apartments, hotels and commercial spaces";
   const description = truncate(
     district
       ? `Browse verified ${what} for rent in ${district}, Mogadishu. Compare prices, photos and amenities, then contact the owner directly. Guri kiro ah oo ${district} ah.`
@@ -162,9 +186,21 @@ function seoForFilters(params: {
 const Properties = () => {
   const { isFavorite, toggleFavorite, isAuthenticated } = useFavorites();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeType = searchParams.get("type") || "";
+
+  // `/properties/:facetSlug` renders this same component with its filters
+  // forced. An unrecognised slug is NOT rendered as an empty category page —
+  // that is a thin page Google would happily index — it falls through to the
+  // 404 below, after every hook has run.
+  const { facetSlug } = useParams();
+  const facet = findFacet(facetSlug);
+  const facetUnknown = Boolean(facetSlug) && !facet;
+
+  const navigate = useNavigate();
+
+  const activeType = facet?.type ?? (searchParams.get("type") || "");
   const activePurpose = searchParams.get("purpose") || "";
-  const districtParam = searchParams.get("district") || searchParams.get("location") || "";
+  const districtParam =
+    facet?.district ?? (searchParams.get("district") || searchParams.get("location") || "");
   const minPriceParam = searchParams.get("minPrice") || "";
   const maxPriceParam = searchParams.get("maxPrice") || "";
   const queryParam = searchParams.get("q") || "";
@@ -189,6 +225,45 @@ const Properties = () => {
     setMinPrice(minPriceParam);
     setMaxPrice(maxPriceParam);
   }, [queryParam, districtParam, minPriceParam, maxPriceParam]);
+
+  /**
+   * Apply a filter change that the facet PATH also encodes.
+   *
+   * On `/properties/2-bedroom-apartments-in-mogadishu` the slug decides what
+   * renders — `activeType` and `districtParam` read the facet first. So a
+   * control that only wrote to the query string changed the address bar and
+   * nothing else: clicking "Hotels" produced
+   * `/properties/2-bedroom-apartments-in-mogadishu?type=hotel`, still showing
+   * apartments. Changing type or district means you have LEFT this facet, so
+   * the path has to change with it.
+   *
+   * Where a facet exists for the new combination we go to it rather than to the
+   * query-string form — that is the URL we want indexed, and it keeps the user
+   * on the same kind of page they were already on. The bedroom count carries
+   * over when the destination supports one (2-bed apartments → 2-bed villas)
+   * and is dropped when it does not (→ hotel rooms, which have no bedroom
+   * facets), because a slug that does not exist would 404.
+   */
+  const applyFacetFilters = (next: URLSearchParams) => {
+    if (!facet) {
+      setSearchParams(next);
+      return;
+    }
+    const nextType = next.get("type") || null;
+    const nextDistrict = canonicalDistrict(next.get("district") || "");
+    const twin =
+      facetSlugFor({ type: nextType, district: nextDistrict, bedrooms: facet.bedrooms }) ??
+      facetSlugFor({ type: nextType, district: nextDistrict });
+
+    if (twin) {
+      // Those two live in the path now; leaving them in the query as well would
+      // be the same value stated twice, in two places that can disagree.
+      next.delete("type");
+      next.delete("district");
+    }
+    const qs = next.toString();
+    navigate(`/properties${twin ? `/${twin}` : ""}${qs ? `?${qs}` : ""}`);
+  };
 
   const toggleAmenity = (a: string) => {
     setAmenities((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]);
@@ -242,11 +317,18 @@ const Properties = () => {
   });
 
   // Client-side filtering for the facets the query doesn't cover.
+  const propertiesOnlyIds = (dbProperties || []).map((property) => property.id);
   const properties: Property[] = (dbProperties || [])
     .filter((p) => {
       // No occupancy re-check here — see the query above. A nightly unit that
       // is booked tonight still belongs in the results; the card says "Booked
       // till <date>" instead of the listing disappearing.
+      // One predicate for type + district + EXACT bedroom count, shared with
+      // the sitemap's threshold count, so a page can never be published on a
+      // number it does not actually render. Note "exact": the bedrooms control
+      // below is a minimum ("3+"), which is the right filter for a shopper and
+      // the wrong one for a page titled "3 Bedroom Apartments".
+      if (facet && !facetMatches(facet, p)) return false;
       if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase()) && !p.location.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       if (district && district !== "all" && p.location !== district) return false;
       if (minPrice && p.price < Number(minPrice)) return false;
@@ -266,7 +348,7 @@ const Properties = () => {
       id: p.id,
       title: p.title,
       description: p.description,
-      type: (p.type === "villa" ? "house" : p.type) as PropertyType,
+      type: p.type as PropertyType,
       price: p.price,
       deposit: p.deposit,
       location: p.location,
@@ -298,16 +380,136 @@ const Properties = () => {
   // One RPC for every nightly unit on the page, not one per card. The mapping
   // above rewrites only villa→house, so "hotel"/"bnb" survive it intact and
   // `isBookableType` inside the hook still recognises them.
+  const { data: hotelDirectoryRows } = useQuery({
+    queryKey: ["hotel-directory-links", activeType, propertiesOnlyIds.join(",")],
+    enabled: activeType === "hotel" && propertiesOnlyIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await looseFrom("hotel_rooms")
+        .select("property_id, hotel_id, hotels!hotel_id(id, slug, name, tagline, logo_url, hero_image_url, address)")
+        .in("property_id", propertiesOnlyIds)
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        property_id: string;
+        hotel_id: string;
+        hotels: {
+          id: string;
+          slug: string;
+          name: string;
+          tagline: string | null;
+          logo_url: string | null;
+          hero_image_url: string | null;
+          address: string | null;
+        } | null;
+      }>;
+    },
+  });
+
+  const shuffle = <T,>(arr: T[]): T[] => {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  const hotelDirectory = activeType === "hotel" ? (() => {
+    const map = new Map<string, {
+      id: string;
+      slug: string;
+      name: string;
+      tagline: string | null;
+      logoUrl: string | null;
+      heroImageUrl: string | null;
+      address: string | null;
+      rooms: Property[];
+    }>();
+
+    for (const row of hotelDirectoryRows ?? []) {
+      const hotel = row.hotels;
+      if (!hotel) continue;
+      const room = properties.find((candidate) => candidate.id === row.property_id);
+      if (!room) continue;
+
+      const current = map.get(hotel.id) ?? {
+        id: hotel.id,
+        slug: hotel.slug,
+        name: hotel.name,
+        tagline: hotel.tagline,
+        logoUrl: hotel.logo_url,
+        heroImageUrl: hotel.hero_image_url,
+        address: hotel.address,
+        rooms: [],
+      };
+
+      current.rooms.push(room);
+      map.set(hotel.id, current);
+    }
+
+    return Array.from(map.values()).map((hotel) => ({
+      ...hotel,
+      rooms: [...hotel.rooms],
+    }));
+  })() : [];
+
+  const randomizedHotelDirectory = useMemo(() => {
+    if (activeType !== "hotel") return [];
+    return shuffle(hotelDirectory);
+  }, [activeType, hotelDirectory]);
+
+  const randomizedHotelRooms = useMemo(() => {
+    if (activeType !== "hotel") return [];
+    return shuffle(hotelDirectory.flatMap((hotel) => hotel.rooms));
+  }, [activeType, hotelDirectory]);
+
   const { data: bookedRanges } = useRoomBookedRanges(properties);
   const bookedUntilFor = (id: string) => bookedUntil(bookedRanges?.[id] ?? []);
 
-  const seo = seoForFilters({
+  const queryParamSeo = seoForFilters({
     type: activeType,
     district: districtParam,
     query: queryParam,
     minPrice: minPriceParam,
     maxPrice: maxPriceParam,
   });
+
+  // A facet page below the inventory threshold still renders — old links and
+  // filter chips must not break — but it is not offered to the index. See the
+  // doorway-page note in src/lib/facets.ts for why that line is not optional.
+  //
+  // Gated on `!isLoading` deliberately. `properties` is empty on first paint,
+  // and emitting noindex during load would hand a crawler that snapshots early
+  // a directive we did not mean. The sitemap applies the same threshold at
+  // build time, so a genuinely thin page is not being advertised anyway.
+  const facetTooThin = facet ? !isLoading && properties.length < FACET_MIN_LISTINGS : false;
+  const seo = facet
+    ? {
+        title: buildTitle(facet.title),
+        description: facet.description,
+        canonical: absoluteUrl(`/properties/${facet.slug}`),
+        noindex: facetTooThin,
+      }
+    : queryParamSeo;
+
+  const facetJsonLd = facet
+    ? [
+        breadcrumbLd([
+          { name: "Home", url: "/" },
+          { name: "Properties", url: "/properties" },
+          { name: facet.heading, url: `/properties/${facet.slug}` },
+        ]),
+        itemListLd(
+          properties.map((property) => ({
+            url: absoluteUrl(`/property/${property.id}`),
+            name: property.title,
+          })),
+          facet.heading,
+        ),
+      ]
+    : undefined;
+
+  if (facetUnknown) return <NotFound />;
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-0">
@@ -320,6 +522,7 @@ const Properties = () => {
         description={seo.description}
         canonical={seo.canonical}
         noindex={seo.noindex}
+        jsonLd={facetJsonLd}
       />
       <Header />
 
@@ -371,7 +574,22 @@ const Properties = () => {
                   <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5" /> District
                   </label>
-                  <Select value={district} onValueChange={setDistrict}>
+                  <Select
+                    value={district}
+                    onValueChange={(value) => {
+                      // Off a facet this is pure local state, as before. On one,
+                      // the facet's own district would override it and the list
+                      // would come back empty — so change the path instead.
+                      if (!facet) {
+                        setDistrict(value);
+                        return;
+                      }
+                      const next = new URLSearchParams(searchParams);
+                      if (value && value !== "all") next.set("district", value);
+                      else next.delete("district");
+                      applyFacetFilters(next);
+                    }}
+                  >
                     <SelectTrigger className="h-10 rounded-xl">
                       <SelectValue placeholder="All districts" />
                     </SelectTrigger>
@@ -535,7 +753,7 @@ const Properties = () => {
                 const next = new URLSearchParams(searchParams);
                 if (f.value) next.set("type", f.value);
                 else next.delete("type");
-                setSearchParams(next);
+                applyFacetFilters(next);
               }}
               className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold border transition-colors ${
                 activeType === f.value
@@ -553,16 +771,30 @@ const Properties = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl md:text-2xl font-heading font-extrabold text-foreground tracking-tight">
-              {/* Read the label off typeFilters rather than capitalising the
-                  raw value: the database enum is "villa", so the old version
-                  titled the Houses page "Villas" (and "Commercials"). */}
-              {activeType
-                ? typeFilters.find((f) => f.value === activeType)?.label ?? "Properties"
-                : "All properties"}
+              {/* On a facet page the heading IS the page's subject and has to
+                  match its <title> — "3 Bedroom Apartments for Rent in Hodan,
+                  Mogadishu". Off a facet, read the label off typeFilters rather
+                  than capitalising the raw value: the database enum is "villa",
+                  so the old version titled the Villas page "Villas" via a path
+                  that also produced "Commercials". */}
+              {facet
+                ? facet.heading
+                : activeType
+                  ? typeFilters.find((f) => f.value === activeType)?.label ?? "Properties"
+                  : "All properties"}
             </h1>
             <p className="text-muted-foreground text-sm mt-0.5">
               {isLoading ? "Loading…" : `${properties.length} ${properties.length === 1 ? "property" : "properties"} found`}
             </p>
+            {/* Real copy, not filler. A category page whose only text is its own
+                heading and a grid of cards has nothing to rank ON — and the
+                intro is written per-facet so the set does not read as one
+                template stamped out 120 times. */}
+            {facet && (
+              <p className="text-sm text-muted-foreground mt-3 max-w-2xl leading-relaxed">
+                {facet.intro}
+              </p>
+            )}
           </div>
           {(searchQuery || activeFilterCount > 0) && (
             <div className="flex flex-wrap gap-1">
@@ -597,7 +829,81 @@ const Properties = () => {
         )}
 
         {/* Grid */}
-        {!isLoading && (
+        {!isLoading && activeType === "hotel" && hotelDirectory.length > 0 ? (
+          <div className="space-y-6">
+            <div className="overflow-x-auto pb-2">
+              <div className="flex min-w-max gap-3">
+                {randomizedHotelDirectory.map((hotel) => (
+                  <Link
+                    key={hotel.id}
+                    to={`/hotels/${hotel.slug}`}
+                    className="group block min-w-[220px] max-w-[220px] overflow-hidden rounded-3xl border border-border bg-card shadow-card transition-colors hover:border-primary/50"
+                  >
+                    <div className="relative">
+                      <img
+                        src={hotel.heroImageUrl || hotel.logoUrl || "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1200&q=80"}
+                        alt={hotel.name}
+                        className="h-36 w-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+                      {hotel.logoUrl && (
+                        <img
+                          src={hotel.logoUrl}
+                          alt=""
+                          className="absolute bottom-3 left-3 h-10 w-10 rounded-xl border border-white/30 object-cover bg-background"
+                        />
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <p className="truncate font-heading text-base font-bold text-foreground group-hover:text-primary transition-colors">
+                        {hotel.name}
+                      </p>
+                      {hotel.tagline && (
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{hotel.tagline}</p>
+                      )}
+                      {hotel.address && (
+                        <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <MapPin className="w-3 h-3" />
+                          <span className="truncate">{hotel.address}</span>
+                        </p>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {randomizedHotelRooms.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-heading text-lg font-bold text-foreground">Rooms</h2>
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {randomizedHotelRooms.length} room{randomizedHotelRooms.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-8 md:gap-x-6">
+                  {randomizedHotelRooms.map((property, i) => (
+                    <motion.div
+                      key={property.id}
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(i * 0.05, 0.5) }}
+                    >
+                      <PropertyCard
+                        property={property}
+                        isFavorite={isFavorite(property.id)}
+                        onToggleFavorite={toggleFavorite}
+                        isAuthenticated={isAuthenticated}
+                        bookedUntil={bookedUntilFor(property.id)}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : !isLoading ? (
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-8 md:gap-x-6">
             {properties.map((property, i) => (
               <motion.div
@@ -616,7 +922,7 @@ const Properties = () => {
               </motion.div>
             ))}
           </div>
-        )}
+        ) : null}
 
         {!isLoading && properties.length === 0 && (
           <div className="text-center py-20 bg-card rounded-3xl border border-border shadow-card mt-8">
@@ -631,6 +937,34 @@ const Properties = () => {
               Clear all filters
             </Button>
           </div>
+        )}
+
+        {/* Related searches.
+            None of the facet pages appear in the nav, so this block plus the
+            "More like this" strip on each listing is the ONLY path a crawler
+            has between them. It is also how authority moves around the set —
+            a link from a page that ranks is worth more to its neighbours than
+            anything the sitemap can do, which merely announces that a URL
+            exists. Rendered even while the results load, because the links do
+            not depend on the result set. */}
+        {facet && (
+          <nav aria-label="Related searches" className="mt-10 pt-6 border-t border-border">
+            <h2 className="text-sm font-heading font-bold text-foreground mb-3">
+              Related searches
+            </h2>
+            <ul className="flex flex-wrap gap-2">
+              {relatedFacets(facet).map((related) => (
+                <li key={related.slug}>
+                  <Link
+                    to={`/properties/${related.slug}`}
+                    className="inline-flex items-center rounded-full border border-border bg-card px-3.5 py-1.5 text-xs text-foreground hover:bg-muted transition-colors"
+                  >
+                    {related.heading}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
         )}
       </div>
 

@@ -7,15 +7,48 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import {
-  Building2, Hotel, Home, Briefcase, LandPlot,
-  Users, Shield, Clock, HeadphonesIcon, CheckCircle2,
-  ArrowRight, Sparkles, Star, TrendingUp, DollarSign,
+  Building2, Hotel, Home, LandPlot,
+  Users, Shield, Clock, CheckCircle2,
+  ArrowRight, Star, TrendingUp, DollarSign,
   BedDouble, ClipboardCheck, Wrench, FileText,
-  ArrowUpRight, ChevronRight, Building, Handshake,
-  BarChart3, Settings2, Search, BookOpen, Gem,
-  Zap, Target, Palette, Globe, Smartphone,
+  ArrowUpRight, Building, Handshake,
+  BarChart3, Search, Gem,
+  Zap, Target, Globe, Smartphone,
   CalendarClock,
 } from "lucide-react";
+
+/**
+ * A section label.
+ *
+ * ── WHAT THIS REPLACED, AND WHY ────────────────────────────────────────────
+ * Seven sections each opened with the same construction: a filled `<Badge>`
+ * pill, `uppercase tracking-widest font-bold`, an icon jammed in front, and a
+ * DIFFERENT accent colour every time — primary, hotel purple, success green,
+ * warning amber, accent orange. Four things were wrong with it at once:
+ *
+ *   • The icon-in-a-coloured-pill above a headline is the single most
+ *     recognisable generated-landing-page component there is. It shows up on
+ *     every AI-built marketing page, usually with the same Sparkles glyph.
+ *   • Rotating the accent colour per section is not a system, it is a rainbow.
+ *     A brand has one accent; using five says none of them meant anything.
+ *   • A filled pill is a BADGE — it means status ("New", "Beta", "3 unread").
+ *     Using it as a heading label spends an emphasis device on decoration, so
+ *     when something genuinely needs flagging there is nothing louder left.
+ *   • Bold + uppercase + wide tracking on a coloured field is three emphases
+ *     doing one job.
+ *
+ * A label needs to be quiet and legible: it is wayfinding, not a headline. So
+ * this is small, muted, letterspaced once, and sits on a hairline rule that
+ * gives the section a top edge. One treatment, every section.
+ */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="inline-flex items-center gap-2 mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <span aria-hidden="true" className="h-px w-6 bg-border" />
+      {children}
+    </p>
+  );
+}
 
 const SHOWCASE_SECTIONS = [
   {
@@ -132,13 +165,19 @@ const RENTER_BENEFITS = [
   },
   {
     icon: Shield,
-    title: "Verified Listings",
-    desc: "Every property is checked by our team. What you see is what you get — no fake listings.",
+    title: "Photos and prices up front",
+    // Was "Every property is checked by our team" — there is no review step
+    // between an owner pressing publish and the listing going live, so the
+    // claim was one a renter could disprove by publishing something themselves.
+    desc: "Listings carry at least two real photos, the asking price and the deposit before you ever call anyone.",
   },
   {
     icon: Clock,
-    title: "Instant Contact",
-    desc: "Message the agency directly via WhatsApp or our in-app inquiry system. Quick responses guaranteed.",
+    title: "Contact the owner",
+    // Was "Quick responses guaranteed" — we do not control how fast a landlord
+    // replies, and guaranteeing someone else's behaviour is a promise the
+    // platform cannot keep.
+    desc: "Message whoever is letting the place over WhatsApp or through the site. No agent sits in between.",
   },
   {
     icon: Star,
@@ -216,10 +255,10 @@ const TEAM_FEATURES = [
 const PRICING_PLANS = [
   {
     plan: "pms",
-    label: "Property Management",
+    label: "PMS Only",
     price: "$60",
     period: "/month",
-    tagline: "Perfect for agencies and solo landlords",
+    tagline: "Property management without hotel operations",
     features: [
       "Rent ledger & payment tracking",
       "Utility bills management",
@@ -235,17 +274,17 @@ const PRICING_PLANS = [
   },
   {
     plan: "hotel",
-    label: "Hotel",
+    label: "Hotel Management + PMS",
     price: "$99.99",
     period: "/month",
-    tagline: "Everything a hotel business needs",
+    tagline: "The complete hotel bundle with PMS included",
     features: [
       "Hotel room management & rates",
       "Front desk arrivals/departures",
       "Online booking engine",
       "Housekeeping board",
-      "Custom hotel website on subdomain",
-      "Staff roster, payroll & documents",
+      "Rent ledger, utilities & maintenance",
+      "Custom hotel website and staff payroll",
       "14-day free trial",
     ],
     cta: "Start Free Trial",
@@ -289,68 +328,75 @@ export default function Showcase() {
       <Header />
 
       {/* ──────── HERO ──────── */}
-      <section className="relative min-h-[85vh] md:min-h-[72vh] flex items-center overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/10" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/15 via-transparent to-transparent" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-accent/10 via-transparent to-transparent" />
-        </div>
+      {/*
+        HERO — rebuilt.
 
+        What was here: three stacked gradient washes (a diagonal, plus a radial
+        at top-right and another at bottom-left), a Sparkles pill reading "One
+        Platform — Every Solution", a headline whose second line was recoloured
+        to the brand accent, three equally-weighted buttons, and a five-step
+        staggered fade. Every one of those is a generated-landing-page reflex,
+        and together they were doing the arguing that the words should do.
+
+        What replaces it: one flat surface with a single hairline seam at the
+        bottom, one headline in one colour, one clear primary action with two
+        quieter ones beside it, and a single fade for the whole block. The page
+        now has somewhere to put emphasis, because it is no longer spending it
+        everywhere at once.
+      */}
+      <section className="relative flex items-center border-b border-border bg-muted/25 min-h-[70vh] md:min-h-[62vh]">
         <div className="container relative z-10 pt-24 md:pt-32">
-          <div className="max-w-3xl">
-            <FadeIn>
-              <Badge className="mb-4 bg-primary/15 text-primary border-primary/20 hover:bg-primary/20 px-4 py-1.5 text-xs font-bold uppercase tracking-widest rounded-full">
-                <Sparkles className="w-3.5 h-3.5 mr-1.5" /> One Platform — Every Solution
-              </Badge>
-            </FadeIn>
-            <FadeIn delay={0.1}>
+          <FadeIn>
+            <div className="max-w-3xl">
               <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-heading font-extrabold text-foreground leading-[1.05] tracking-tight mb-5">
-                Run your property business
-                <span className="block text-primary">the smart way</span>
+                Run your property business from your phone
               </h1>
-            </FadeIn>
-            <FadeIn delay={0.2}>
               <p className="text-lg md:text-xl text-muted-foreground max-w-xl mb-8 leading-relaxed">
-                Whether you run a hotel, manage rentals for owners, or are looking for a
-                place to rent or buy — MogadishuRents is the only platform you need in Mogadishu.
+                Hotels, letting agencies and landlords in Mogadishu use MogadishuRents to
+                take bookings, track rent, pay staff and publish their own website.
               </p>
-            </FadeIn>
-            <FadeIn delay={0.3}>
-              <div className="flex flex-wrap gap-3">
-                <Button size="xl" className="rounded-full font-semibold shadow-glow" asChild>
+              {/* One primary action. The old row gave three buttons equal weight,
+                  which is the same as giving none — a visitor who does not
+                  already know which of the three they are has to read all of
+                  them before deciding. */}
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="xl" className="rounded-full font-semibold" asChild>
                   <a href="#for-hotels">
-                    For Hotels <ArrowRight className="ml-2 h-4 w-4" />
-                  </a>
-                </Button>
-                <Button variant="hero-outline" size="xl" className="rounded-full font-semibold" asChild>
-                  <a href="#for-agencies">
-                    For Agencies <ArrowRight className="ml-2 h-4 w-4" />
+                    See how it works <ArrowRight className="ml-2 h-4 w-4" />
                   </a>
                 </Button>
                 <Button variant="outline" size="xl" className="rounded-full font-semibold" asChild>
                   <Link to="/properties">
-                    Browse Listings <Search className="ml-2 h-4 w-4" />
+                    Browse listings <Search className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
               </div>
-            </FadeIn>
-          </div>
+            </div>
+          </FadeIn>
 
-          {/* Quick stats */}
+          {/*
+            What the platform covers, not how many customers it claims.
+
+            Three of the four figures here were invented — "2,000+ properties",
+            "500+ owners & hotels", and a "4.8★ rating" for a product with no
+            reviews feature at all. Only "18 districts" was real, and it kept
+            company that made it look invented too. These four are each true
+            today and stay true as the platform grows.
+          */}
           <FadeIn delay={0.4}>
-            <div className="flex flex-wrap gap-8 md:gap-12 mt-16">
+            <dl className="flex flex-wrap gap-8 md:gap-12 mt-16">
               {[
-                { value: "2,000+", label: "Properties" },
-                { value: "500+", label: "Owners & Hotels" },
-                { value: "18", label: "Districts Covered" },
-                { value: "4.8★", label: "Rating" },
+                { term: "18", detail: "Districts covered" },
+                { term: "5", detail: "Property types" },
+                { term: "0%", detail: "Commission on rent" },
+                { term: "Free", detail: "To list and browse" },
               ].map((s) => (
-                <div key={s.label}>
-                  <p className="text-2xl md:text-3xl font-heading font-extrabold text-foreground">{s.value}</p>
-                  <p className="text-sm text-muted-foreground">{s.label}</p>
+                <div key={s.detail}>
+                  <dt className="text-2xl md:text-3xl font-heading font-extrabold text-foreground">{s.term}</dt>
+                  <dd className="text-sm text-muted-foreground">{s.detail}</dd>
                 </div>
               ))}
-            </div>
+            </dl>
           </FadeIn>
         </div>
 
@@ -377,9 +423,7 @@ export default function Showcase() {
           <div className="grid lg:grid-cols-2 gap-12 items-center mb-16">
             <FadeIn>
               <div>
-                <Badge className="mb-4 bg-hotel/15 text-hotel border-hotel/20 text-xs font-bold uppercase tracking-widest rounded-full">
-                  <Hotel className="w-3.5 h-3.5 mr-1.5" /> For Hotels
-                </Badge>
+                <SectionLabel>For Hotels</SectionLabel>
                 <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-foreground tracking-tight mb-4">
                   Run your hotel from one place
                 </h2>
@@ -396,7 +440,7 @@ export default function Showcase() {
                   </Button>
                   <Button variant="ghost" className="rounded-full" asChild>
                     <Link to="/billing">
-                      Hotel plan — $99.99/mo
+                      Hotel Management + PMS — $99.99/mo
                     </Link>
                   </Button>
                 </div>
@@ -463,9 +507,9 @@ export default function Showcase() {
           </div>
 
           <FadeIn className="mt-8 text-center">
-            <Button size="xl" className="rounded-full font-semibold shadow-glow" asChild>
+            <Button size="xl" className="rounded-full font-semibold" asChild>
               <Link to="/billing">
-                Start Hotel Free Trial <Sparkles className="ml-2 h-4 w-4" />
+                Start Hotel Free Trial <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </FadeIn>
@@ -518,9 +562,7 @@ export default function Showcase() {
             </FadeIn>
             <FadeIn delay={0.2} className="order-1 lg:order-2">
               <div>
-                <Badge className="mb-4 bg-success/15 text-success border-success/20 text-xs font-bold uppercase tracking-widest rounded-full">
-                  <Building2 className="w-3.5 h-3.5 mr-1.5" /> For Agencies & Owners
-                </Badge>
+                <SectionLabel>For Agencies & Owners</SectionLabel>
                 <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-foreground tracking-tight mb-4">
                   Your entire rental portfolio, organised
                 </h2>
@@ -537,7 +579,7 @@ export default function Showcase() {
                   </Button>
                   <Button variant="ghost" className="rounded-full" asChild>
                     <Link to="/billing">
-                      PMS plan — $60/mo
+                      PMS Only — $60/mo
                     </Link>
                   </Button>
                 </div>
@@ -560,9 +602,9 @@ export default function Showcase() {
           </div>
 
           <FadeIn className="mt-8 text-center">
-            <Button size="xl" className="rounded-full font-semibold shadow-glow" variant="hero" asChild>
+            <Button size="xl" className="rounded-full font-semibold" variant="hero" asChild>
               <Link to="/billing">
-                Start PMS Free Trial <Sparkles className="ml-2 h-4 w-4" />
+                Start PMS Free Trial <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
           </FadeIn>
@@ -573,9 +615,7 @@ export default function Showcase() {
       <section id="for-renters" className="py-16 md:py-24">
         <div className="container">
           <FadeIn className="text-center max-w-xl mx-auto mb-12">
-            <Badge className="mb-4 bg-primary/15 text-primary border-primary/20 text-xs font-bold uppercase tracking-widest rounded-full">
-              <Home className="w-3.5 h-3.5 mr-1.5" /> For Renters
-            </Badge>
+            <SectionLabel>For Renters</SectionLabel>
             <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-foreground tracking-tight mb-4">
               Find your next home — or business space
             </h2>
@@ -600,7 +640,7 @@ export default function Showcase() {
           </div>
 
           <FadeIn className="mt-10 text-center">
-            <Button size="xl" className="rounded-full font-semibold shadow-glow" variant="hero" asChild>
+            <Button size="xl" className="rounded-full font-semibold" variant="hero" asChild>
               <Link to="/properties">
                 Browse Properties <Search className="ml-2 h-4 w-4" />
               </Link>
@@ -615,9 +655,7 @@ export default function Showcase() {
           <div className="grid lg:grid-cols-2 gap-12 items-center mb-16">
             <FadeIn>
               <div>
-                <Badge className="mb-4 bg-warning/15 text-warning border-warning/20 text-xs font-bold uppercase tracking-widest rounded-full">
-                  <LandPlot className="w-3.5 h-3.5 mr-1.5" /> Property for Sale
-                </Badge>
+                <SectionLabel>Property for Sale</SectionLabel>
                 <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-foreground tracking-tight mb-4">
                   Buy land, homes & commercial property
                 </h2>
@@ -657,9 +695,7 @@ export default function Showcase() {
       <section id="team" className="py-16 md:py-24 bg-primary/[0.03]">
         <div className="container">
           <FadeIn className="text-center max-w-2xl mx-auto mb-12">
-            <Badge className="mb-4 bg-accent/15 text-accent border-accent/20 text-xs font-bold uppercase tracking-widest rounded-full">
-              <Users className="w-3.5 h-3.5 mr-1.5" /> 10-Agent Teams
-            </Badge>
+            <SectionLabel>10-Agent Teams</SectionLabel>
             <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-foreground tracking-tight mb-4">
               An army of agents — not just one person
             </h2>
@@ -721,9 +757,7 @@ export default function Showcase() {
       <section id="pricing" className="py-16 md:py-24">
         <div className="container">
           <FadeIn className="text-center max-w-xl mx-auto mb-12">
-            <Badge className="mb-4 bg-primary/15 text-primary border-primary/20 text-xs font-bold uppercase tracking-widest rounded-full">
-              <DollarSign className="w-3.5 h-3.5 mr-1.5" /> Pricing
-            </Badge>
+            <SectionLabel>Pricing</SectionLabel>
             <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-foreground tracking-tight mb-4">
               Two plans, one platform
             </h2>
@@ -784,26 +818,39 @@ export default function Showcase() {
       </section>
 
       {/* ──────── CTA ──────── */}
-      <section className="py-16 md:py-24 bg-gradient-to-br from-primary/15 via-background to-accent/10">
+      {/* A flat inked band, not a primary-to-accent diagonal wash. The gradient
+          made the closing section look like the hero it was competing with;
+          one solid dark field ends the page instead of restarting it. */}
+      <section className="py-16 md:py-24 bg-secondary text-secondary-foreground">
         <div className="container">
           <FadeIn className="text-center max-w-xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-foreground tracking-tight mb-4">
-              Ready to get started?
+            {/* Colours are the INVERTED pair, not the page's defaults.
+                `text-foreground` on `bg-secondary` is dark ink on a dark field —
+                the hazard of flipping a section's background without flipping
+                what sits on it. */}
+            <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-secondary-foreground tracking-tight mb-4">
+              Start with the 14 days free
             </h2>
-            <p className="text-muted-foreground text-base md:text-lg leading-relaxed mb-8">
-              Join 500+ hotels, agencies and property owners already on the platform.
-              Start your 14-day free trial today.
+            <p className="text-secondary-foreground/70 text-base md:text-lg leading-relaxed mb-8">
+              No card, no payment details. Set up your rooms or your portfolio, and
+              decide at the end of the fortnight.
             </p>
             <div className="flex flex-wrap justify-center gap-3">
-              <Button size="xl" className="rounded-full font-semibold shadow-glow" variant="hero" asChild>
+              {/* No Sparkles on the button. A glyph that means nothing next to a
+                  verb that already says what happens is decoration on the one
+                  control the whole page exists to get clicked. */}
+              <Button size="xl" className="rounded-full font-semibold" variant="hero" asChild>
                 <Link to="/billing">
-                  Start Free Trial <Sparkles className="ml-2 h-4 w-4" />
+                  Start free trial <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
-              <Button size="xl" variant="outline" className="rounded-full font-semibold" asChild>
-                <Link to="/signup">
-                  Create Account <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
+              <Button
+                size="xl"
+                variant="outline"
+                className="rounded-full font-semibold bg-transparent border-secondary-foreground/30 text-secondary-foreground hover:bg-secondary-foreground/10 hover:text-secondary-foreground"
+                asChild
+              >
+                <Link to="/signup">Create an account</Link>
               </Button>
             </div>
           </FadeIn>
@@ -815,7 +862,7 @@ export default function Showcase() {
         <div className="container">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-glow">
+              <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
                 <span className="text-primary-foreground font-heading font-extrabold text-sm">M</span>
               </div>
               <div>

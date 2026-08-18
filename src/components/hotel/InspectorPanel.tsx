@@ -38,7 +38,7 @@ export type PageSettings = {
  */
 export function InspectorPanel({
   tab, onTabChange, onClose,
-  section, sectionIndex, onSectionPatch, upload, uploading,
+  section, sectionIndex, onSectionPatch, upload, uploadFile, uploading,
   settings, onSettingsChange,
   rooms, selectedRooms, onToggleRoom,
   slug, onApplyLook, onLogoFile, onLogoRemove, logoUploading, onQueueDelete,
@@ -52,6 +52,14 @@ export function InspectorPanel({
   sectionIndex: number;
   onSectionPatch: (patch: Partial<PageSection>) => void;
   upload: (files: FileList | null, field: "imageUrl" | "images") => Promise<void>;
+  /**
+   * Upload one file and hand back its public URL.
+   *
+   * `upload` above writes into the SELECTED BLOCK's own fields, which is the
+   * wrong shape for anything holding a list of its own images — a menu block's
+   * dishes each carry a picture. This is the raw primitive for those.
+   */
+  uploadFile: (file: File) => Promise<string>;
   uploading: boolean;
   settings: PageSettings;
   onSettingsChange: (patch: Partial<PageSettings>) => void;
@@ -119,6 +127,7 @@ export function InspectorPanel({
                 <SectionFields
                   section={section}
                   upload={upload}
+                  uploadFile={uploadFile}
                   uploading={uploading}
                   onUpdate={onSectionPatch}
                   onQueueDelete={onQueueDelete}

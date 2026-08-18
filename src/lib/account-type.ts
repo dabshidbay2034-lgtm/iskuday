@@ -22,14 +22,13 @@ import type { UserRole } from "@/lib/types";
  * own role in Settings (ProfileSettings self-upgrade), and its existing data
  * keeps working the whole time.
  *
- * The DB enum is `villa` where the UI says `house`; both spellings appear
- * below because `properties.type` stores the former and `PropertyType` in
- * src/lib/types.ts declares the latter.
+ * `properties.type` and `PropertyType` in src/lib/types.ts now agree on
+ * `villa`. `house` is accepted on the way in only — see property-display.ts.
  */
 
 export type AccountKind = "agency" | "hotel" | "landlord" | "platform" | "none";
 
-/** The `properties.type` values as stored in Postgres (note `villa`, not `house`). */
+/** The `properties.type` values as stored in Postgres. Matches `PropertyType`. */
 export type DbPropertyType = "villa" | "apartment" | "hotel" | "bnb" | "commercial";
 
 /**
@@ -83,7 +82,7 @@ export function canCreatePropertyType(
   type: string | null | undefined,
 ): boolean {
   if (!type) return false;
-  // Accept the UI's "house" alias for the stored "villa".
+  // Accept the pre-migration "house" spelling from old links and stale clients.
   const normalised = type === "house" ? "villa" : type;
   return allowedPropertyTypes(role).includes(normalised as DbPropertyType);
 }
@@ -108,10 +107,10 @@ export function canListRentals(role: UserRole | null | undefined): boolean {
 export function wrongAccountTypeMessage(role: UserRole | null | undefined): string {
   switch (accountKind(role)) {
     case "hotel":
-      return "Hotel accounts list hotel rooms. To rent out houses or apartments, switch your account type in Settings.";
+      return "Hotel accounts list hotel rooms. To rent out villas or apartments, switch your account type in Settings.";
     case "agency":
     case "landlord":
-      return "Rental accounts list houses, apartments, BnB and commercial space. To list hotel rooms, switch to a Hotel account in Settings.";
+      return "Rental accounts list villas, apartments, BnB and commercial space. To list hotel rooms, switch to a Hotel account in Settings.";
     default:
       return "Your account can't list properties yet. Choose an account type in Settings.";
   }

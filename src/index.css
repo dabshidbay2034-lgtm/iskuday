@@ -1,9 +1,25 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap");
+/* ─────────────────────────────────────────────────────────────────────────────
+   FONTS ARE LOADED IN index.html, NOT HERE.
+
+   Six @import rules used to sit at the top of this file. They were doing real
+   damage for no benefit:
+
+     • Four of the six families were never used. Work Sans and Inconsolata were
+       not referenced anywhere — not in the markup, not even in the Tailwind
+       config. Lora was wired to `font-serif`, which nothing in the app uses.
+       Space Mono was wired to `font-mono`, where the system mono stack renders
+       IDs and tabular figures more crisply at 10–11px anyway.
+     • The remaining two — Plus Jakarta Sans and Inter — were ALREADY being
+       loaded properly by index.html, which does it with `preconnect` and a
+       `<link>`. So they were fetched twice.
+     • CSS @import is the slowest way to load a font: the browser cannot even
+       discover the font URL until this stylesheet has been downloaded and
+       parsed, so it serialises two round trips that a `<link>` in the head
+       starts in parallel. On a phone in Mogadishu that is the difference
+       between text appearing and text appearing eventually.
+
+   Add new families to the <link> in index.html. Keep the list short.
+   ───────────────────────────────────────────────────────────────────────── */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

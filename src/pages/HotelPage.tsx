@@ -14,6 +14,16 @@ import { brandFromHotel, PageSectionView } from "@/components/hotel/PageSectionV
 import {
   usePublicHotelPage, useHotelRooms, type HotelRoomProperty,
 } from "@/hooks/use-hotels";
+// Same exported name in both modules, for two different things: use-hotels
+// finds a HOTEL by its public slug, use-hotel-pages finds one PAGE of a hotel.
+// Aliased rather than renamed at the source so the tenant routes that already
+// import it keep working.
+import {
+  isHomeSlug,
+  sectionsForPage,
+  useHotelPages,
+  usePublicHotelPage as usePublicHotelSubpage,
+} from "@/hooks/use-hotel-pages";
 
 const SAFE_SLUG = /^[a-z0-9-]{1,80}$/;
 
@@ -50,10 +60,26 @@ function toFallbackRoom(row: RawFallbackRoom): HotelRoomProperty {
  * block is a sliding carousel. Draft pages 404 for visitors.
  */
 const HotelPage = () => {
-  const { slug } = useParams<{ slug: string }>();
+  // `/hotels/:slug` is the hotel's MAIN page; `/hotels/:slug/:pageSlug` is any
+  // of its other published ones. The main page is resolved by the `is_home`
+  // flag, never by guessing a slug spelling — so however many pages a hotel
+  // builds, and whichever one it later promotes, /hotels/:slug keeps showing
+  // the one it has designated. See the partial unique index in
+  // 20260810000002 that guarantees exactly one home per hotel.
+  const { slug, pageSlug } = useParams<{ slug: string; pageSlug?: string }>();
   const safeSlug = slug && SAFE_SLUG.test(slug) ? slug : null;
+  const safePageSlug = pageSlug && SAFE_SLUG.test(pageSlug) ? pageSlug : undefined;
 
   const { data: hotel, isPending } = usePublicHotelPage(safeSlug ?? undefined);
+
+  // The page being viewed, and every published page for the menu. Both are
+  // RLS-scoped: the public only ever sees published pages of a published hotel.
+  const { data: currentPage, isPending: pagePending } = usePublicHotelSubpage(
+    hotel?.id,
+    safePageSlug,
+  );
+  const { data: allPages } = useHotelPages(hotel?.id);
+  const menuPages = (allPages ?? []).filter((page) => page.isPublished);
   const { data: roomLinks } = useHotelRooms(hotel?.id);
 
   // Room images ride along with the embedded property row; fall back to a
@@ -87,8 +113,10 @@ const HotelPage = () => {
     );
   }
 
-  // Draft or unknown slug — the public never sees un-published pages.
-  if (!hotel) {
+  // Draft or unknown slug — the public never sees un-published pages. A named
+  // sub-page that does not resolve is the same soft 404: rendering the home
+  // page under someone else's URL would put two URLs on identical content.
+  if (!hotel || (safePageSlug && !pagePending && !currentPage)) {
     return (
       <div className="min-h-screen bg-background pb-20 md:pb-0">
         {/* A draft or missing hotel is a soft 404 (vercel.json serves it with
@@ -124,8 +152,31 @@ const HotelPage = () => {
     .map((link) => link.property ?? roomImages?.find((r) => r.id === link.propertyId) ?? null)
     .filter((r): r is HotelRoomProperty => r !== null);
 
-  const hasContact = hotel.sections.some((s) => s.type === "contact");
+  // `sectionsForPage` back-fills a home page whose own `sections` is still
+  // empty from the hotel's legacy scalar fields, so a hotel that never touched
+  // the multi-page builder renders exactly as it did before. `hotel.sections`
+  // remains the fallback for a hotel with no `hotel_pages` row at all.
+  const pageSections = currentPage ? sectionsForPage(currentPage, hotel) : hotel.sections;
+  const hasContact = pageSections.some((s) => s.type === "contact");
   const brand = brandFromHotel(hotel);
+
+  // The menu only earns its space once there is somewhere to go. One page is
+  // not a site, and a nav with a single item is noise.
+  const showMenu = menuPages.length > 1;
+  const onHome = !safePageSlug || isHomeSlug(currentPage?.slug);
+  const pagePath = (pageSlugValue: string, isHome: boolean) =>
+    isHome || isHomeSlug(pageSlugValue)
+      ? `/hotels/${hotel.slug}`
+      : `/hotels/${hotel.slug}/${pageSlugValue}`;
+
+  // A sub-page is its own document and must say so. Pointing every page of a
+  // hotel at /hotels/:slug would collapse the whole site into one URL.
+  const canonicalPath = onHome
+    ? `/hotels/${hotel.slug}`
+    : `/hotels/${hotel.slug}/${currentPage?.slug ?? ""}`;
+  const pageTitle = onHome
+    ? `${hotel.name} — Hotel in Mogadishu`
+    : `${currentPage?.title ?? ""} — ${hotel.name}`;
 
   // Owner-written copy first, tagline second, generated line last. All three are
   // user-controlled free text, so everything goes through truncate() — which
@@ -148,9 +199,9 @@ const HotelPage = () => {
           is guaranteed to describe a real, live page. `hotel.slug` (not the raw
           `slug` param) is the canonical spelling straight from the database. */}
       <Seo
-        title={buildTitle(`${hotel.name} — Hotel in Mogadishu`)}
+        title={buildTitle(pageTitle)}
         description={hotelDescription}
-        canonical={absoluteUrl(`/hotels/${hotel.slug}`)}
+        canonical={absoluteUrl(canonicalPath)}
         image={hotel.heroImageUrl || hotel.logoUrl || hotel.gallery[0]}
         // Lodging has the best-supported rich results of anything on this site,
         // and the rooms carry per-NIGHT offers — publishing a nightly rate as
@@ -193,8 +244,42 @@ const HotelPage = () => {
       />
       <Header />
 
+      {/* ── The hotel's own menu ─────────────────────────────────────────
+          Their pages, on our domain. The subdomain has carried a nav since
+          20260810000002 (TenantShell) while the apex — the surface we actually
+          want indexed — showed only one page, so a hotel that built three had
+          two of them reachable nowhere Google looks. Plain <Link>s: these are
+          real URLs with real content, which is the entire point. */}
+      {showMenu && (
+        <nav
+          aria-label={`${hotel.name} pages`}
+          className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-30"
+        >
+          <div className="container max-w-5xl flex items-center gap-1 overflow-x-auto py-2">
+            {menuPages.map((page) => {
+              const href = pagePath(page.slug, page.isHome);
+              const active = page.isHome ? onHome : currentPage?.slug === page.slug;
+              return (
+                <Link
+                  key={page.id}
+                  to={href}
+                  aria-current={active ? "page" : undefined}
+                  className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors ${
+                    active
+                      ? "bg-foreground text-background font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  {page.title}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      )}
+
       {/* ── Blocks, in the owner's order ─────────────────────────────────── */}
-      {hotel.sections.map((section) => (
+      {pageSections.map((section) => (
         <PageSectionView
           key={section.id}
           section={section}

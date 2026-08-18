@@ -84,8 +84,7 @@ const Dashboard = () => {
 
   const isPendingVerification = !userRole?.is_verified;
   const canSeePrivateViewStats = Boolean(
-    userId &&
-      (platformRole === "owner" || platformRole === "hotel_manager" || platformRole === "admin" || platformRole === "semi_admin"),
+    userId && platformRole === "owner",
   );
 
   const { data: properties, isLoading: propsLoading } = useQuery({

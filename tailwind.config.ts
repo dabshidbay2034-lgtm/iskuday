@@ -37,7 +37,8 @@ export default {
   				'sans-serif'
   			],
   			serif: [
-  				'Lora',
+  				// Lora was listed first but never loaded or used — see the note at
+  				// the top of src/index.css. System serif is the real first choice.
   				'ui-serif',
   				'Georgia',
   				'Cambria',
@@ -46,7 +47,9 @@ export default {
   				'serif'
   			],
   			mono: [
-  				'Space Mono',
+  				// Space Mono is a display face; at the 10–11px this app uses mono
+  				// for (Clerk ids, tabular figures) the system stack is sharper and
+  				// costs no download. Removed with the @imports in src/index.css.
   				'ui-monospace',
   				'SFMono-Regular',
   				'Menlo',

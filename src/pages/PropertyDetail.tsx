@@ -1,10 +1,10 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
 import Seo from "@/components/Seo";
-import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
+import { absoluteUrl, buildTitle } from "@/lib/seo";
 import { breadcrumbLd, propertyListingLd } from "@/lib/structured-data";
 import ImageGallery from "@/components/ImageGallery";
 import { BookingRequestForm } from "@/components/BookingRequestForm";
@@ -27,7 +27,12 @@ import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import { PERMISSIONS } from "@/lib/permissions";
 import { propertyTypeClass, propertyTypeLabel, purposeLabel, purposeClass } from "@/lib/property-display";
 import { isBookableType, isNightlyRateType } from "@/lib/property-kind";
+import { ALL_FACETS, facetMatches } from "@/lib/facets";
+import { listingSeoDescription, listingSeoTitle, type ListingSeoInput } from "@/lib/listing-seo";
 import { useRoomBookedRanges, bookedUntil, formatBookedUntil } from "@/hooks/use-room-availability";
+
+type LooseClient = { from: (table: string) => any };
+const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 const PropertyDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -76,11 +81,7 @@ const PropertyDetail = () => {
   });
 
   const canSeePrivateViewStats = Boolean(
-    property &&
-      (currentUserId === property.owner_id ||
-        isAdmin ||
-        isSemiAdmin ||
-        can(PERMISSIONS.ANALYTICS_VIEW)),
+    property && currentUserId === property.owner_id,
   );
 
   const { data: owner } = useQuery({
@@ -99,6 +100,28 @@ const PropertyDetail = () => {
       return data;
     },
     enabled: !!property?.owner_id,
+  });
+
+  const { data: hotelProfile } = useQuery({
+    queryKey: ["property-hotel-profile", property?.id],
+    enabled: Boolean(property?.id),
+    queryFn: async () => {
+      const { data, error } = await looseFrom("hotel_rooms")
+        .select("hotels!hotel_id(id, slug, name, tagline, logo_url, hero_image_url, address)")
+        .eq("property_id", property!.id)
+        .maybeSingle();
+      if (error) throw error;
+      const hotel = (data as { hotels?: {
+        id: string;
+        slug: string;
+        name: string;
+        tagline: string | null;
+        logo_url: string | null;
+        hero_image_url: string | null;
+        address: string | null;
+      } } | null)?.hotels ?? null;
+      return hotel;
+    },
   });
 
   // Must sit ABOVE the loading/not-found early returns below — a hook called
@@ -175,28 +198,29 @@ const PropertyDetail = () => {
   // Everything below runs only after the query resolved AND returned a row, so
   // this page never emits a canonical for a URL that is really a 404 — a
   // canonical on a dead listing is an invitation to index it.
-  const priceUnit = isNightly ? "night" : "month";
-  const seoTitle = buildTitle(
-    `${property.title} — $${property.price.toLocaleString()}/${priceUnit} in ${property.location}, Mogadishu`,
-  );
+  // Built from the stored columns, not `property.title` — see src/lib/listing-seo.ts
+  // for why the owner's free-typed title is the wrong thing to lead a <title>
+  // with on a platform where it reads "3 bed room Appartment aad u qabow".
+  const seoInput: ListingSeoInput = {
+    title: property.title,
+    description: property.description,
+    type: property.type,
+    location: property.location,
+    price: property.price,
+    bedrooms: property.bedrooms,
+    toilets: property.toilets,
+    kitchens: property.kitchens,
+    livingRooms: property.living_rooms,
+    isNightly,
+    isForSale: property.purpose === "sell",
+  };
+  const seoTitle = buildTitle(listingSeoTitle(seoInput));
+  const seoDescription = listingSeoDescription(seoInput);
 
-  // The owner's own words win: they contain the specifics ("near Bakaara",
-  // "generator included") that make a snippet worth clicking. The generated
-  // fallback exists because a listing with an empty description would otherwise
-  // inherit whatever description was already in the head.
-  const rooms = [
-    property.bedrooms != null && `${property.bedrooms} bedroom${property.bedrooms === 1 ? "" : "s"}`,
-    property.toilets != null && `${property.toilets} bathroom${property.toilets === 1 ? "" : "s"}`,
-  ].filter(Boolean).join(", ");
-  const seoDescription = truncate(
-    property.description ||
-      [
-        `${propertyTypeLabel(property.type)}${property.purpose === "sell" ? " for sale" : " for rent"} in ${property.location}, Mogadishu`,
-        rooms && ` — ${rooms}`,
-        `. $${property.price.toLocaleString()} per ${priceUnit}. Guri kiro ah. View photos and contact us on WhatsApp.`,
-      ].filter(Boolean).join(""),
-    158,
-  );
+  // The category pages this listing belongs to. Rendered as links at the foot
+  // of the page: it is how a crawler reaches a facet page (none are in the nav)
+  // and how a visitor who wants "more like this" gets there.
+  const parentFacets = ALL_FACETS.filter((f) => facetMatches(f, property)).slice(0, 4);
 
   const amenities = [
     property.bedrooms != null && { icon: Bed, label: `${property.bedrooms} Bedroom${property.bedrooms > 1 ? "s" : ""}`, color: "bg-primary/10 text-primary" },
@@ -331,8 +355,22 @@ const PropertyDetail = () => {
       />
       <Header />
 
-      {/* Back button overlaid on gallery (mobile) */}
-      <div className="relative">
+      {/*
+        The gallery is edge-to-edge on phones and CONSTRAINED from `md` up.
+
+        It used to be full-bleed at every width, so on a desktop it ran the
+        whole 1265px of the viewport at 506px tall while every other thing on
+        the page — title, price, amenities, booking form — sat inside
+        `max-w-4xl` (896px). The photo overhung the content by ~185px on each
+        side, which read as a banner the page happened to start with rather than
+        as this listing's photograph, and pushed the price and the booking form
+        below the fold.
+
+        Full-bleed stays on mobile on purpose: at 390px there are no margins to
+        speak of, edge-to-edge is the convention every listing app uses, and the
+        back button overlays it.
+      */}
+      <div className="relative md:container md:max-w-4xl md:mt-6">
         <button
           onClick={() => navigate(-1)}
           className="absolute top-3 left-3 z-10 w-9 h-9 rounded-full bg-card/80 backdrop-blur-sm flex items-center justify-center shadow-elevated md:hidden"
@@ -404,6 +442,44 @@ const PropertyDetail = () => {
               </div>
             )}
 
+            {hotelProfile && (
+              <div className="rounded-2xl border border-border bg-card p-4 shadow-card">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">
+                  Hotel profile
+                </p>
+                <div className="flex items-start gap-3">
+                  {(hotelProfile.hero_image_url || hotelProfile.logo_url) ? (
+                    <img
+                      src={hotelProfile.hero_image_url || hotelProfile.logo_url!}
+                      alt={hotelProfile.name}
+                      className="h-16 w-16 rounded-2xl object-cover border border-border bg-muted"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-muted text-lg font-semibold text-foreground">
+                      {hotelProfile.name.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <Link to={`/hotels/${hotelProfile.slug}`} className="font-heading text-lg font-semibold text-foreground hover:text-primary transition-colors">
+                      {hotelProfile.name}
+                    </Link>
+                    {hotelProfile.tagline && (
+                      <p className="mt-1 text-sm text-muted-foreground">{hotelProfile.tagline}</p>
+                    )}
+                    {hotelProfile.address && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {hotelProfile.address}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button asChild variant="outline" className="mt-4 w-full">
+                  <Link to={`/hotels/${hotelProfile.slug}`}>View hotel profile</Link>
+                </Button>
+              </div>
+            )}
+
             {/* Amenities grid */}
             <div>
               <h2 className="font-heading font-semibold text-foreground mb-4">Amenities & Details</h2>
@@ -438,6 +514,31 @@ const PropertyDetail = () => {
                 </div>
               )}
             </div>
+
+            {/* The category pages this listing sits in. Two jobs, one block:
+                a visitor who wants more like this gets there in one click, and
+                a crawler discovers the facet pages at all — nothing in the nav
+                links to them, so without this they are reachable only from the
+                sitemap. */}
+            {parentFacets.length > 0 && (
+              <nav aria-label="Related searches" className="mt-6 pt-4 border-t border-border/50">
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                  More like this
+                </h2>
+                <ul className="flex flex-wrap gap-2">
+                  {parentFacets.map((facet) => (
+                    <li key={facet.slug}>
+                      <Link
+                        to={`/properties/${facet.slug}`}
+                        className="inline-flex items-center rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs text-foreground hover:bg-muted transition-colors"
+                      >
+                        {facet.heading}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            )}
           </div>
 
                     {/* Sidebar */}

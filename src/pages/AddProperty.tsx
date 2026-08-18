@@ -21,7 +21,7 @@ import {
   Wifi, Coffee, PlaneTakeoff, Users, ShieldCheck, CarFront, Utensils, Sun,
   UtensilsCrossed, Bus, Landmark, Clock, CheckCircle2, Wind, Shirt, Sparkles,
   Snowflake, ConciergeBell, Refrigerator, Tv, MonitorPlay, ShowerHead, Vault,
-  Phone, Crown, GlassWater, Droplets, SprayCan,
+  Phone, Crown, GlassWater, Droplets, SprayCan, ArrowUpDown,
 } from "lucide-react";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { motion, AnimatePresence } from "framer-motion";
@@ -482,7 +482,7 @@ const AddProperty = () => {
                   </p>
                 )}
                 {([
-                  { value: "villa", label: "House", icon: Home, desc: "Full home with rooms & amenities — monthly rent" },
+                  { value: "villa", label: "Villa", icon: Home, desc: "Full home with rooms & amenities — monthly rent" },
                   { value: "apartment", label: "Apartment", icon: Building2, desc: "Apartment unit with floor & balcony — monthly rent" },
                   { value: "hotel", label: "Hotel", icon: Hotel, desc: "Hotel room or suite — daily rate" },
                   { value: "bnb", label: "BnB", icon: BedDouble, desc: "Short-let unit — nightly rate, takes bookings" },
@@ -514,7 +514,7 @@ const AddProperty = () => {
                   <Label className="text-xs font-medium text-muted-foreground">{Noun} Title</Label>
                   <div className="relative">
                     <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input placeholder={isHotelAccount ? "e.g. Deluxe Sea-View Double" : "e.g. Modern 3-Bedroom House"} value={form.title} onChange={(e) => updateForm("title", e.target.value)} className="pl-10 h-12 rounded-xl" />
+                    <Input placeholder={isHotelAccount ? "e.g. Deluxe Sea-View Double" : "e.g. Modern 3-Bedroom Villa"} value={form.title} onChange={(e) => updateForm("title", e.target.value)} className="pl-10 h-12 rounded-xl" />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -829,7 +829,7 @@ const AddProperty = () => {
                     <Switch checked={form.is_furnished} onCheckedChange={(v) => updateForm("is_furnished", v)} />
                   </div>
                   <div className="flex items-center justify-between py-3 border-b border-border">
-                    <Label className="flex items-center gap-2 text-sm text-foreground"><span role="img" aria-label="Elevator" className="text-base leading-none">🛗</span> Elevator</Label>
+                    <Label className="flex items-center gap-2 text-sm text-foreground"><ArrowUpDown className="w-4 h-4 text-muted-foreground" aria-hidden="true" /> Elevator</Label>
                     <Switch checked={form.has_elevator} onCheckedChange={(v) => updateForm("has_elevator", v)} />
                   </div>
                 </div>
@@ -972,7 +972,7 @@ const AddProperty = () => {
                     {form.has_cctv && <span className="flex items-center gap-1"><Cctv className="w-3.5 h-3.5" />CCTV</span>}
                     {form.has_parking && <span className="flex items-center gap-1"><Car className="w-3.5 h-3.5" />Parking</span>}
                     {form.has_balcony && <span className="flex items-center gap-1"><Waves className="w-3.5 h-3.5" />Balcony</span>}
-                    {form.has_elevator && <span className="flex items-center gap-1"><span role="img" aria-label="Elevator">🛗</span>Elevator</span>}
+                    {form.has_elevator && <span className="flex items-center gap-1"><ArrowUpDown className="w-3.5 h-3.5" aria-hidden="true" />Elevator</span>}
                     {form.has_free_wifi && <span className="flex items-center gap-1"><Wifi className="w-3.5 h-3.5" />WiFi</span>}
                     {form.has_coffee_shop && <span className="flex items-center gap-1"><Coffee className="w-3.5 h-3.5" />Coffee shop</span>}
                     {form.has_airport_transport && <span className="flex items-center gap-1"><PlaneTakeoff className="w-3.5 h-3.5" />Airport transport</span>}

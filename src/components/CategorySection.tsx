@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Home, Building2, Hotel, Briefcase, ArrowRight } from "lucide-react";
+import { Home, Building2, Hotel, Briefcase, ArrowRight, ArrowUpDown } from "lucide-react";
 import houseImg from "@/assets/house-category.jpg";
 import apartmentImg from "@/assets/apartment-category.jpg";
 import hotelImg from "@/assets/hotel-category.jpg";
@@ -9,7 +9,7 @@ import commercialImg from "@/assets/commercial-category.jpg";
 const categories = [
   {
     type: "villa",
-    title: "Houses",
+    title: "Villas",
     desc: "Full homes with rooms, kitchens & parking",
     icon: Home,
     image: houseImg,
@@ -56,7 +56,7 @@ const CategorySection = () => {
             Browse by category
           </h2>
           <p className="text-muted-foreground text-sm md:text-base mt-1.5">
-            Houses, apartments, hotels or commercial spaces — find your fit
+            Villas, apartments, hotels or commercial spaces — find your fit
           </p>
         </div>
 
@@ -94,7 +94,10 @@ const CategorySection = () => {
                 </div>
                 {cat.elevator && (
                   <div className="mt-2 text-[11px] md:text-xs text-white/80 font-medium flex items-center gap-1">
-                    <span role="img" aria-label="Elevator">🛗</span> Elevator available
+                    {/* An icon, not 🛗 — the emoji renders in each platform's own
+                        drawing style and sat visibly apart from the lucide set
+                        used everywhere else on the card. */}
+                    <ArrowUpDown className="w-3.5 h-3.5" aria-hidden="true" /> Elevator available
                   </div>
                 )}
               </div>

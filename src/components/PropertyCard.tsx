@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Bed, Bath, Car, Cctv, Building2, MapPin, Heart, Armchair, Building, CalendarClock, Snowflake, Wifi, Refrigerator } from "lucide-react";
 import { toast } from "sonner";
@@ -61,9 +61,9 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
         <div className="absolute inset-0 bg-gradient-to-t from-foreground/25 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
         <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-          {/* Callers disagree on the spelling: the list pages remap the enum to
-              "house" before rendering, Saved passes the raw "villa" through.
-              The helper folds both, so neither can miss the lookup. */}
+          {/* Every caller passes the stored "villa" through now. The helper
+              still folds the legacy "house" spelling, so a pre-migration row
+              or a stale cached client cannot miss the lookup. */}
           <Badge className={`${propertyTypeClass(property.type)} border-0 text-[10px] uppercase tracking-wider font-bold rounded-full px-2.5 shadow-sm`}>
             {propertyTypeLabel(property.type)}
           </Badge>
@@ -104,8 +104,29 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
 
       {/* Content — clean Airbnb-style info block beneath the image */}
       <div className="pt-3 px-0.5 space-y-1">
+        {/* A REAL <a href>, not just the card's onClick.
+            The whole card is a clickable div, which works for a person with a
+            mouse and is invisible to a crawler — a div carries no href to
+            follow, so before this every listing on the site was an orphan
+            reachable only by whatever the sitemap happened to announce. A
+            sitemap says a URL exists; a link is what passes authority to it and
+            what category pages exist to do. The title is the anchor because
+            anchor text is itself a ranking signal, and the title is the most
+            descriptive text available.
+
+            Kept inside the clickable div rather than wrapping it: the card
+            already contains a favourite <button> and an agency <button>, and
+            nesting those inside an <a> is invalid HTML that browsers recover
+            from unpredictably. stopPropagation prevents the div's navigate()
+            firing a second, identical navigation on top of the link's. */}
         <h3 className="font-heading font-bold text-foreground text-[15px] leading-snug truncate">
-          {property.title}
+          <Link
+            to={`/property/${property.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="hover:underline focus-visible:underline outline-none"
+          >
+            {property.title}
+          </Link>
         </h3>
         <div className="flex items-center justify-between text-muted-foreground text-sm">
           <div className="flex items-center gap-1 truncate">

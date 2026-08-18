@@ -20,8 +20,39 @@ import posthog from "posthog-js";
 const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY;
 const POSTHOG_HOST = import.meta.env.VITE_POSTHOG_HOST || "https://us.i.posthog.com";
 
-/** True only when a project key was provided. See the no-op note above. */
-export const analyticsEnabled = Boolean(POSTHOG_KEY);
+/**
+ * PostHog PROJECT keys start with `phc_`. Every other PostHog key prefix is a
+ * server-side credential and is rejected by the browser endpoints.
+ *
+ * This check exists because getting it wrong fails in a maximally confusing
+ * way: `posthog.init()` accepts anything, then the SDK emits a 404 on
+ * `/array/<key>/config` and a 401 on `/flags` on every page load, with nothing
+ * anywhere naming the key as the cause. One up-front comparison turns a
+ * recurring console mystery into a sentence that says what to change.
+ */
+const isProjectKey = (key: unknown): key is string =>
+  typeof key === "string" && key.startsWith("phc_");
+
+/**
+ * Whether analytics should run AT ALL in this environment.
+ *
+ * Development is excluded by default, which the previous version did not do.
+ * Two reasons, and the first matters more:
+ *
+ *   • Dev sessions pollute production analytics. Every hot reload, every
+ *     half-built page, every test click lands in the same funnels the team
+ *     makes decisions from — and it is not separable after the fact.
+ *   • It costs a network round trip and console noise on every reload for data
+ *     nobody reads.
+ *
+ * Set `VITE_POSTHOG_DEV=true` to opt a local machine back in when you are
+ * specifically working on tracking.
+ */
+const shouldRunHere =
+  import.meta.env.PROD || import.meta.env.VITE_POSTHOG_DEV === "true";
+
+/** True only when a real project key was provided AND this environment sends. */
+export const analyticsEnabled = isProjectKey(POSTHOG_KEY) && shouldRunHere;
 
 let initialised = false;
 
@@ -29,11 +60,26 @@ export function initAnalytics() {
   if (initialised) return;
 
   if (!analyticsEnabled) {
-    // One line, not a warning per event — a dev without a key should be told
-    // once and then left alone.
-    console.info(
-      "[analytics] VITE_POSTHOG_KEY is not set — analytics is disabled. See docs/POSTHOG_SETUP.md.",
-    );
+    // One line, not a warning per event — and it names WHICH of the three
+    // reasons applies, because "analytics is disabled" on its own sends people
+    // looking at the wrong one.
+    if (!POSTHOG_KEY) {
+      console.info(
+        "[analytics] VITE_POSTHOG_KEY is not set — analytics is disabled. See docs/POSTHOG_SETUP.md.",
+      );
+    } else if (!isProjectKey(POSTHOG_KEY)) {
+      console.warn(
+        "[analytics] VITE_POSTHOG_KEY is not a PostHog *project* key, so analytics is disabled. " +
+          "Project keys start with `phc_` and are found under Settings → Project → Project API Key. " +
+          "Keys with any other prefix are server-side credentials: the browser endpoints reject them " +
+          "with 404 /config and 401 /flags, and they must never be exposed with a VITE_ prefix.",
+      );
+    } else {
+      console.info(
+        "[analytics] Disabled in development so local sessions don't land in production analytics. " +
+          "Set VITE_POSTHOG_DEV=true to send from this machine.",
+      );
+    }
     initialised = true;
     return;
   }

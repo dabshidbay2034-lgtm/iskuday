@@ -54,7 +54,7 @@ const ITEMS_PER_PAGE = 20;
 
 const typeFilters = [
   { value: "", label: "All", icon: SlidersHorizontal },
-  { value: "villa", label: "Houses", icon: Home },
+  { value: "villa", label: "Villas", icon: Home },
   { value: "apartment", label: "Apartments", icon: Building2 },
   { value: "hotel", label: "Hotels", icon: Hotel },
   { value: "bnb", label: "BnB", icon: BedDouble },
@@ -162,7 +162,7 @@ const FeaturedProperties = () => {
       id: p.id,
       title: p.title,
       description: p.description,
-      type: (p.type === "villa" ? "house" : p.type) as PropertyType,
+      type: p.type as PropertyType,
       price: p.price,
       deposit: p.deposit,
       location: p.location,
@@ -204,8 +204,8 @@ const FeaturedProperties = () => {
   }, [rawProperties, sortBy]);
 
   // One RPC for every nightly unit on the page, not one per card. The mapping
-  // above rewrites only villa→house, so "hotel"/"bnb" survive it intact and
-  // `isBookableType` inside the hook still recognises them.
+  // above passes `type` through untouched now that villa is the only spelling,
+  // so "hotel"/"bnb" reach `isBookableType` inside the hook intact.
   const { data: bookedRanges } = useRoomBookedRanges(properties);
   const bookedUntilFor = (id: string) => bookedUntil(bookedRanges?.[id] ?? []);
 

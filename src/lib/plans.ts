@@ -5,11 +5,14 @@ import type { AccountKind } from "@/lib/account-type";
  * AccountKind type, so it can be read from a component, a hook, a test or a
  * future edge function without dragging the data layer along.
  *
- * TWO PLANS, because the platform serves two businesses that were deliberately
- * split apart (see src/lib/account-type.ts):
+ * TWO OFFERINGS, not two disconnected products:
  *
- *   hotel  $99.99/mo — rooms, front desk, bookings, housekeeping, hotel pages
- *   pms    $60.00/mo — rent ledger, utilities, expenses, maintenance, leases
+ *   hotel  $99.99/mo — hotel operations + property management bundled together
+ *   pms    $60.00/mo — PMS only for agencies and landlords
+ *
+ * The hotel bundle is the full product stack a hotel business needs. The PMS
+ * plan remains a separate, cheaper option for rental businesses without hotel
+ * management features.
  *
  * Both open with a 14-day free trial.
  *
@@ -51,23 +54,23 @@ export const TRIAL_DAYS = 14;
 export const PLANS: Plan[] = [
   {
     id: "hotel",
-    label: "Hotel",
-    tagline: "Run the whole property — rooms, front desk and your own website.",
+    label: "Hotel Management + PMS",
+    tagline: "The complete hotel package — rooms, bookings, staff and rent operations in one place.",
     priceUsd: 99.99,
     features: [
-      "Hotel rooms and rates",
-      "Front desk: today's arrivals, departures and in-house guests",
-      "Bookings and reservation requests",
-      "Housekeeping board",
+      "Hotel rooms, rates and reservation requests",
+      "Front desk: arrivals, departures and in-house guests",
+      "Bookings, housekeeping and staff payroll",
       "Your own hotel web page on a subdomain",
-      "Staff roster, payroll and the document vault",
+      "PMS tools: rent ledger, utilities and maintenance",
+      "Lease documents, tenant records and portfolio visibility",
     ],
     accountKinds: ["hotel"],
   },
   {
     id: "pms",
-    label: "Property management",
-    tagline: "Every unit, every tenant, every dollar — in one ledger.",
+    label: "PMS Only",
+    tagline: "For agencies and landlords that need property management without hotel operations.",
     priceUsd: 60.0,
     features: [
       "Rent ledger, month by month",

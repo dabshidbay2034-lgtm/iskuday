@@ -68,6 +68,9 @@ type RosterRow = {
   staffId: string;
   staffName: string;
   staffRole: string;
+  /** The staff member's OWN shift — never a hardcoded 09:00–18:00. */
+  scheduledStart: string;
+  scheduledEnd: string;
   attendance: AttendanceWithStaff | null;
 };
 
@@ -95,32 +98,49 @@ const StaffAttendance = () => {
         staffId: s.id,
         staffName: s.name,
         staffRole: s.role,
+        scheduledStart: s.scheduledStart,
+        scheduledEnd: s.scheduledEnd,
         attendance: byStaffId.get(s.id) ?? null,
       }));
   }, [staffList, attendance]);
 
+  /**
+   * Counts every status the CHECK constraint allows, not just three of them.
+   *
+   * This used to tally present/absent/late only. Attendance has FIVE statuses,
+   * so anyone marked early_leave or on_leave was counted in the total and in no
+   * bucket at all - a roster of one person who left early rendered as
+   * "Present 0 / Late 0 / Absent 0 / Total active 1", which reads as though
+   * nobody turned up. Deriving buckets from the status itself means a newly
+   * added status can never again go silently uncounted.
+   */
   const summary = useMemo(() => {
-    let present = 0, absent = 0, late = 0;
+    const tally: Record<AttendanceStatus, number> = {
+      present: 0, absent: 0, late: 0, early_leave: 0, on_leave: 0,
+    };
+    let recorded = 0;
     for (const row of roster) {
       const status = row.attendance?.status;
-      if (status === "present") present++;
-      else if (status === "absent") absent++;
-      else if (status === "late") late++;
+      if (status && status in tally) { tally[status] += 1; recorded += 1; }
     }
-    return { present, absent, late, total: roster.length };
+    return { ...tally, total: roster.length, noRecord: roster.length - recorded };
   }, [roster]);
 
   const isToday = date === todayDateInput();
 
-  function handleClockIn(staffId: string) {
+  function handleClockIn(row: RosterRow) {
+    if (!userId) return; // route is auth-gated; never write an empty owner_id
     clockIn.mutate({
-      staffId,
-      ownerId: userId ?? "",
+      staffId: row.staffId,
+      ownerId: userId,
       orgId: orgId ?? null,
       date,
       clockIn: new Date().toISOString(),
-      scheduledStart: "09:00",
-      scheduledEnd: "18:00",
+      // The staff member's real shift. The trigger re-reads it from hotel_staff
+      // anyway, but sending the truth keeps the row correct even if migration
+      // 20260902000001 hasn't been applied yet.
+      scheduledStart: row.scheduledStart,
+      scheduledEnd: row.scheduledEnd,
     });
   }
 
@@ -176,9 +196,13 @@ const StaffAttendance = () => {
         </div>
 
         {/* Summary stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Summary stats. Six tiles, not four: the buckets must sum to the
+            roster or the row of numbers quietly contradicts the list below it. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <SummaryTile label="Present" value={String(summary.present)} className="text-success" />
           <SummaryTile label="Late" value={String(summary.late)} className="text-amber-600" />
+          <SummaryTile label="Left early" value={String(summary.early_leave)} className="text-amber-600" />
+          <SummaryTile label="On leave" value={String(summary.on_leave)} className="text-muted-foreground" />
           <SummaryTile label="Absent" value={String(summary.absent)} className="text-destructive" />
           <SummaryTile label="Total active" value={String(summary.total)} className="text-foreground" />
         </div>
@@ -221,7 +245,7 @@ const StaffAttendance = () => {
                 isToday={isToday}
                 clockingIn={clockIn.isPending && clockIn.variables?.staffId === row.staffId}
                 clockingOut={clockOut.isPending && row.attendance != null && clockOut.variables?.attendanceId === row.attendance.id}
-                onClockIn={() => handleClockIn(row.staffId)}
+                onClockIn={() => handleClockIn(row)}
                 onClockOut={() => row.attendance && handleClockOut(row.attendance.id)}
                 onEdit={() => row.attendance && openEdit(row.attendance)}
               />
@@ -314,7 +338,10 @@ function AttendanceRow({ row, isToday, clockingIn, clockingOut, onClockIn, onClo
           <div className="text-xs text-muted-foreground space-y-0.5">
             <div className="flex items-center gap-1.5">
               <ClockArrowUp className="w-3 h-3" />
-              <span>Scheduled: {att?.scheduledStart ?? "09:00"} &ndash; {att?.scheduledEnd ?? "18:00"}</span>
+              {/* Falls back to the staff member's own shift, not a 9-to-6
+                  guess — before anyone clocks in there is no attendance row,
+                  and showing "09:00" to a night guard is a lie. */}
+              <span>Scheduled: {att?.scheduledStart ?? row.scheduledStart} &ndash; {att?.scheduledEnd ?? row.scheduledEnd}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <ClockArrowDown className="w-3 h-3" />

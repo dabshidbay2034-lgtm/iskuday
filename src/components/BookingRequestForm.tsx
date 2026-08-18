@@ -3,7 +3,7 @@ import { CalendarCheck, Loader2, Send } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { formatMoney } from "@/hooks/use-rent";
-import { nightsBetween, todayInput } from "@/hooks/use-bookings";
+import { addDaysLocal, nightsBetween, todayInput } from "@/hooks/use-bookings";
 
 // `create_booking_request` arrives with migration 20260807000001 and isn't in
 // the generated types until `supabase gen types` runs, so it's called through a
@@ -99,6 +99,17 @@ export function BookingRequestForm({
       setError("Enter your name so the hotel can reach you.");
       return;
     }
+    // At least one way to reach the guest.
+    //
+    // Both fields were optional, so a request could arrive carrying a name and
+    // nothing else — while the confirmation screen promises "a member of the
+    // team will confirm by phone". The desk then has a held room and no way to
+    // contact whoever booked it. Either channel satisfies this; requiring both
+    // would turn away guests who have one and not the other.
+    if (!phone.trim() && !email.trim()) {
+      setError("Add a phone number or an email so the hotel can confirm your booking.");
+      return;
+    }
     setLoading(true);
     try {
       const { data, error: rpcError } = await looseRpc.rpc("create_booking_request", {
@@ -146,9 +157,7 @@ export function BookingRequestForm({
               onChange={(e) => {
                 setCheckIn(e.target.value);
                 if (!checkOut || e.target.value >= checkOut) {
-                  const n = new Date(`${e.target.value}T00:00:00`);
-                  n.setDate(n.getDate() + 1);
-                  setCheckOut(n.toISOString().slice(0, 10));
+                  setCheckOut(addDaysLocal(e.target.value, 1));
                 }
               }}
               className="h-10 rounded-xl"
@@ -216,7 +225,7 @@ export function BookingRequestForm({
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label htmlFor="req-phone" className="text-[11px] text-muted-foreground">
-                Phone
+                Phone <span className="text-foreground">*</span>
               </Label>
               <Input
                 id="req-phone"
@@ -230,7 +239,7 @@ export function BookingRequestForm({
             </div>
             <div className="space-y-1">
               <Label htmlFor="req-email" className="text-[11px] text-muted-foreground">
-                Email
+                Email <span className="text-foreground">*</span>
               </Label>
               <Input
                 id="req-email"

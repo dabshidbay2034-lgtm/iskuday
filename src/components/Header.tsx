@@ -6,11 +6,30 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, X, User, LogIn, Plus, LayoutDashboard, Settings, LogOut, Heart, ChevronDown, Shield, Eye } from "lucide-react";
+import {
+  Menu, X, User, LogIn, Plus, LayoutDashboard, Settings, LogOut, Heart,
+  ChevronDown, Shield, Eye, Home, Building2, Hotel, BedDouble, Store,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppAuth } from "@/hooks/use-auth";
 import { accountKind } from "@/lib/account-type";
 import { useClerk } from "@clerk/clerk-react";
+
+/**
+ * The property categories, defined once and rendered in both navs.
+ *
+ * They used to be two hand-maintained lists — the desktop dropdown and the
+ * mobile sheet — which is how the two drifted: BnB shipped as a property type
+ * and was added to neither. One array means a new type appears in both places
+ * or in neither.
+ */
+const PROPERTY_CATEGORIES = [
+  { type: "villa", label: "Villas", Icon: Home },
+  { type: "apartment", label: "Apartments", Icon: Building2 },
+  { type: "hotel", label: "Hotels", Icon: Hotel },
+  { type: "bnb", label: "BnB", Icon: BedDouble },
+  { type: "commercial", label: "Commercial", Icon: Store },
+] as const;
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -62,19 +81,22 @@ const Header = () => {
             <DropdownMenuTrigger className="flex items-center gap-1 px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors outline-none">
               Categories <ChevronDown className="w-3.5 h-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44 rounded-2xl">
-              <DropdownMenuItem asChild>
-                <Link to="/properties?type=villa" className="w-full rounded-lg">🏠 Houses</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/properties?type=apartment" className="w-full rounded-lg">🏢 Apartments</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/properties?type=hotel" className="w-full rounded-lg">🏨 Hotels</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/properties?type=commercial" className="w-full rounded-lg">💼 Commercial</Link>
-              </DropdownMenuItem>
+            {/* Icons, not emoji.
+                Emoji render in each platform's own house style — Apple's 🏠 and
+                Google's are different drawings in different palettes — so a nav
+                built from them looks like three different design languages
+                depending on the visitor's phone. The lucide set is already the
+                app's icon language; using it here means the menu inherits the
+                brand colour and stays consistent everywhere. */}
+            <DropdownMenuContent align="start" className="w-48 rounded-2xl">
+              {PROPERTY_CATEGORIES.map(({ type, label, Icon }) => (
+                <DropdownMenuItem key={type} asChild>
+                  <Link to={`/properties?type=${type}`} className="w-full rounded-lg gap-2">
+                    <Icon className="w-4 h-4 text-muted-foreground" />
+                    {label}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
           <Link to="/services" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Services</Link>
@@ -199,10 +221,17 @@ const Header = () => {
               <div className="py-2 px-3">
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Categories</div>
                 <div className="flex flex-wrap gap-2">
-                  <Link to="/properties?type=villa" className="px-3 py-1.5 rounded-full text-sm font-medium border border-border hover:border-primary hover:text-primary transition-colors" onClick={() => setIsOpen(false)}>🏠 Houses</Link>
-                  <Link to="/properties?type=apartment" className="px-3 py-1.5 rounded-full text-sm font-medium border border-border hover:border-primary hover:text-primary transition-colors" onClick={() => setIsOpen(false)}>🏢 Apartments</Link>
-                  <Link to="/properties?type=hotel" className="px-3 py-1.5 rounded-full text-sm font-medium border border-border hover:border-primary hover:text-primary transition-colors" onClick={() => setIsOpen(false)}>🏨 Hotels</Link>
-                  <Link to="/properties?type=commercial" className="px-3 py-1.5 rounded-full text-sm font-medium border border-border hover:border-primary hover:text-primary transition-colors" onClick={() => setIsOpen(false)}>💼 Commercial</Link>
+                  {PROPERTY_CATEGORIES.map(({ type, label, Icon }) => (
+                    <Link
+                      key={type}
+                      to={`/properties?type=${type}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border border-border hover:border-primary hover:text-primary transition-colors"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {label}
+                    </Link>
+                  ))}
                 </div>
               </div>
               <div className="px-3"><InstallPWAButton /></div>

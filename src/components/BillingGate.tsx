@@ -4,7 +4,9 @@ import BottomNav from "@/components/BottomNav";
 import { Clock, Loader2, Lock, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { accountKind } from "@/lib/account-type";
 import { cn } from "@/lib/utils";
+import { useAppAuth } from "@/hooks/use-auth";
 import { useEntitlement, useStartTrial, type SubscriptionState } from "@/hooks/use-subscription";
 import { PLANS, TRIAL_DAYS, formatPlanPrice, planById, type PlanId } from "@/lib/plans";
 

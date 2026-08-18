@@ -6,7 +6,11 @@ import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
+    // 8080 by default, but honour PORT so a second dev server (another agent
+    // session, another checkout) can be assigned a free port instead of
+    // silently falling back to 8081 and leaving its preview proxy pointing at
+    // a port nothing is listening on.
+    port: Number(process.env.PORT) || 8080,
     hmr: { overlay: false },
   },
   plugins: [

@@ -173,6 +173,37 @@ export function todayInput(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+/**
+ * Shift a `YYYY-MM-DD` date string by whole days, staying in LOCAL time.
+ *
+ * ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+ * Both booking forms auto-filled check-out as "check-in + 1 day" by doing
+ *
+ *     const n = new Date(`${value}T00:00:00`);   // local midnight
+ *     n.setDate(n.getDate() + 1);                // local midnight, next day
+ *     n.toISOString().slice(0, 10);              // ← converts to UTC
+ *
+ * `toISOString()` renders in UTC. Mogadishu is UTC+3, so local midnight on the
+ * 23rd is 21:00 UTC on the 22nd, and slicing the date part gave back the 22nd —
+ * the SAME DAY as check-in. `nightsBetween` then returned 0 and the form
+ * refused to submit with "Check-out must be after check-in", blaming the guest
+ * for a value the app had just filled in for them.
+ *
+ * Formatting the local fields by hand never round-trips through UTC, so this is
+ * correct at every offset. Same reasoning as `todayInput` above and
+ * `todayIso()` in use-room-availability.ts — this is the third place that trap
+ * appeared, which is why it is now one exported helper instead of three
+ * open-coded copies.
+ */
+export function addDaysLocal(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  if (!y || !m || !d) return date;
+  const shifted = new Date(y, m - 1, d + days);
+  const month = String(shifted.getMonth() + 1).padStart(2, "0");
+  const day = String(shifted.getDate()).padStart(2, "0");
+  return `${shifted.getFullYear()}-${month}-${day}`;
+}
+
 // ── Loose accessor (bookings table is post-generated-types) ─────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -377,6 +377,15 @@ export type StaffAttendanceSummary = {
   late: number;
   absent: number;
   onLeave: number;
+  /**
+   * Clocked out before their shift ended.
+   *
+   * Counted explicitly rather than folded into `present`: it is one of the five
+   * statuses the CHECK constraint allows, and leaving it out of the tally meant
+   * those people were counted in `total` but in none of the buckets — so the
+   * columns silently failed to add up.
+   */
+  earlyLeave: number;
   total: number;
 };
 
@@ -384,9 +393,21 @@ export function useAttendanceSummary(date: string) {
   const { isSignedIn } = useAppAuth();
   const staff = useHotelStaffList();
 
+  // Read the head-count OUTSIDE the query function.
+  //
+  // It used to be computed inside queryFn from `staff.data`, which appeared in
+  // neither the query key nor `enabled`. If the roster had not resolved when
+  // this first ran, `total` resolved to 0 — and because the key never changed,
+  // TanStack had no reason to re-run it, so the dashboard reported "0 of 0"
+  // until the cache expired. Deriving it here makes the value reactive, and
+  // putting it in the key means the count is part of what identifies the result.
+  const activeStaff = staff.data?.filter((s) => s.active).length ?? 0;
+
   return useQuery({
-    queryKey: ["staff-attendance", "summary", date],
-    enabled: Boolean(isSignedIn && date),
+    queryKey: ["staff-attendance", "summary", date, activeStaff],
+    // Wait for the roster too: a summary whose denominator is unknown is not a
+    // summary, and rendering one teaches the operator to distrust the page.
+    enabled: Boolean(isSignedIn && date && staff.data !== undefined),
     queryFn: async (): Promise<StaffAttendanceSummary> => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const loose = supabase as unknown as { from: (t: string) => any };
@@ -396,13 +417,16 @@ export function useAttendanceSummary(date: string) {
       if (error) throw error;
 
       const rows = (data ?? []) as { status: string }[];
-      const present = rows.filter((r) => r.status === "present").length;
-      const late = rows.filter((r) => r.status === "late").length;
-      const absent = rows.filter((r) => r.status === "absent").length;
-      const onLeave = rows.filter((r) => r.status === "on_leave").length;
-      const total = staff.data?.filter((s) => s.active).length ?? 0;
+      const countOf = (status: string) => rows.filter((r) => r.status === status).length;
 
-      return { present, late, absent, onLeave, total };
+      return {
+        present: countOf("present"),
+        late: countOf("late"),
+        absent: countOf("absent"),
+        onLeave: countOf("on_leave"),
+        earlyLeave: countOf("early_leave"),
+        total: activeStaff,
+      };
     },
   });
 }

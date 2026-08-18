@@ -16,7 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { toast } from "sonner";
 import {
-  Edit, Trash2, EyeOff, Shield, AlertTriangle, Users, CheckCircle, XCircle, Building,
+  Edit, Trash2, Eye, EyeOff, Shield, AlertTriangle, Users, CheckCircle, XCircle, Building,
   Search, UserCheck, UserX, Phone, Filter, Wallet
 } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";

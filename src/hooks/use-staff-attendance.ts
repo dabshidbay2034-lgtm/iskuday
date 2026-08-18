@@ -96,10 +96,19 @@ const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(t
 
 // ── Keys ─────────────────────────────────────────────────────────────────────
 
-export const attendanceKey = (date?: string) =>
-  date
-    ? (["staff-attendance", date] as const)
-    : (["staff-attendance"] as const);
+/**
+ * Keyed by SCOPE as well as date.
+ *
+ * Without the scope in the key, switching the active organisation served the
+ * previous org's roster from cache — the rows differ, the key did not. Called
+ * bare it still returns the `["staff-attendance"]` prefix, which is what the
+ * mutations invalidate.
+ */
+export const attendanceKey = (date?: string, scope?: string) => {
+  if (!date) return ["staff-attendance"] as const;
+  if (!scope) return ["staff-attendance", date] as const;
+  return ["staff-attendance", date, scope] as const;
+};
 
 export const attendanceStaffKey = (staffId?: string) =>
   staffId ? (["staff-attendance", "staff", staffId] as const) : (["staff-attendance", "staff"] as const);
@@ -120,18 +129,24 @@ export function todayDateInput(): string {
  * All attendance records for a given date, joined with staff name/role.
  */
 export function useAttendanceForDate(date: string) {
-  const { isSignedIn } = useAppAuth();
+  const { isSignedIn, userId, orgId } = useAppAuth();
 
   return useQuery({
-    queryKey: attendanceKey(date),
-    enabled: Boolean(isSignedIn && date),
+    queryKey: attendanceKey(date, `${userId ?? "-"}:${orgId ?? "-"}`),
+    enabled: Boolean(isSignedIn && date && userId),
     queryFn: async (): Promise<AttendanceWithStaff[]> => {
       const { data, error } = await looseFrom("staff_attendance")
         .select("*, staff:hotel_staff(id, name, role, phone)")
         .eq("date", date)
         .order("clock_in", { ascending: true, nullsFirst: false });
       if (error) throw error;
-      return ((data as RawAttendanceJoin[]) ?? []).map(toAttendanceWithStaff);
+      return ((data as RawAttendanceJoin[]) ?? [])
+        .map(toAttendanceWithStaff)
+        // Same scoping rule as useHotelStaffList: own records, plus the active
+        // org's. RLS is the real boundary — this stops an operator who runs two
+        // businesses from seeing both rosters merged with no way to tell them
+        // apart, which is a legibility problem rather than a security one.
+        .filter((a) => a.ownerId === userId || (orgId != null && a.orgId === orgId));
     },
   });
 }

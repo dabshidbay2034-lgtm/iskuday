@@ -92,7 +92,26 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      {/*
+        Opted into both React Router v7 behaviours early.
+
+        These were emitting a deprecation warning per page load. Turning them on
+        now means the eventual v7 upgrade is a version bump rather than a
+        behaviour change discovered in production:
+
+          v7_startTransition   — route state updates are wrapped in
+            React.startTransition, so a slow lazy route no longer blocks the
+            current screen from responding while it loads. Every page here is
+            already lazy + Suspense, so this is the behaviour the app was
+            written for.
+
+          v7_relativeSplatPath — fixes how relative paths resolve INSIDE splat
+            routes. This app has two (`/signin/*`, `/signup/*`) and both render
+            a Clerk component configured with an ABSOLUTE `path="/signin"`,
+            with no relative `to=`/`navigate()` beneath them — so there is
+            nothing whose resolution can change.
+      */}
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         {/* Inside the router (needs useLocation) and outside the boundary, so a
             crashed page still reports the route it happened on. */}
         <AnalyticsBridge />
@@ -113,6 +132,11 @@ const App = () => (
             <Route path="/showcase" element={<Showcase />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/properties" element={<Properties />} />
+            {/* Path-based category pages — /properties/3-bedroom-apartments-in-mogadishu.
+                Same component, filters forced from the slug. The catalogue of valid
+                slugs and the reasoning live in src/lib/facets.ts; an unrecognised one
+                renders the 404 rather than an empty category page. */}
+            <Route path="/properties/:facetSlug" element={<Properties />} />
             {/* Splat routes are required: Clerk's path-based routing renders its
                 own sub-paths (/signin/factor-one, /signup/sso-callback,
                 /signup/verify-email-address, ...). An exact path match sends the
@@ -191,6 +215,10 @@ const App = () => (
               <Route path="/agency/:orgId" element={<AgencyProfile />} />
               {/* Each hotel's public, customizable web page (20260808000001). */}
               <Route path="/hotels/:slug" element={<HotelPage />} />
+              {/* A hotel's other published pages. /hotels/:slug stays the MAIN page
+                  whichever one the hotel designates, so promoting a different page
+                  never changes the URL the listings and the sitemap point at. */}
+              <Route path="/hotels/:slug/:pageSlug" element={<HotelPage />} />
               <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['admin' as UserRole]}><AdminServices /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

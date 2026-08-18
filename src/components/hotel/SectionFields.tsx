@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { ImagePlus, Loader2, X, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +24,8 @@ import {
  * one on a phone), so the two stay in sync rather than one replacing the other.
  */
 
-const UPLOAD_FIELD: "imageUrl" = "imageUrl";
-const UPLOAD_GALLERY: "images" = "images";
+const UPLOAD_FIELD = "imageUrl" as const;
+const UPLOAD_GALLERY = "images" as const;
 
 /** The label + option list the Inspector draws for each style axis. */
 const AXIS_UI: Record<StyleAxis, { label: string; options: StyleOption<never>[] }> = {
@@ -39,10 +41,12 @@ const AXIS_UI: Record<StyleAxis, { label: string; options: StyleOption<never>[] 
 };
 
 export function SectionFields({
-  section, upload, uploading, onUpdate, onQueueDelete,
+  section, upload, uploadFile, uploading, onUpdate, onQueueDelete,
 }: {
   section: PageSection;
   upload: (files: FileList | null, field: "imageUrl" | "images") => Promise<void>;
+  /** Upload one file, get its public URL. Used by blocks that hold their own list of images. */
+  uploadFile: (file: File) => Promise<string>;
   uploading: boolean;
   onUpdate: (patch: Partial<PageSection>) => void;
   /**
@@ -58,6 +62,7 @@ export function SectionFields({
         <ContentFields
           section={section}
           upload={upload}
+          uploadFile={uploadFile}
           uploading={uploading}
           onUpdate={onUpdate}
           onQueueDelete={onQueueDelete}
@@ -132,10 +137,11 @@ function StyleFields({
 /* ── Content ───────────────────────────────────────────────────────────────── */
 
 function ContentFields({
-  section, upload, uploading, onUpdate, onQueueDelete,
+  section, upload, uploadFile, uploading, onUpdate, onQueueDelete,
 }: {
   section: PageSection;
   upload: (files: FileList | null, field: "imageUrl" | "images") => Promise<void>;
+  uploadFile: (file: File) => Promise<string>;
   uploading: boolean;
   onUpdate: (patch: Partial<PageSection>) => void;
   onQueueDelete: (urls: string[]) => void;
@@ -279,9 +285,8 @@ function ContentFields({
           </div>
           <MenuItemsEditor
             items={section.items ?? []}
-            uploading={uploading}
+            uploadFile={uploadFile}
             onUpdate={onUpdate}
-            upload={upload}
             onQueueDelete={onQueueDelete}
           />
         </>
@@ -364,17 +369,33 @@ function UploadField({
   );
 }
 
-/** Menu items editor for the menu section. */
+/**
+ * Menu items editor for the menu section.
+ *
+ * ── WHY THE UPLOAD GOES TO STORAGE, NOT A DATA URL ─────────────────────────
+ * The first version of this read each dish photo with `FileReader.readAsDataURL`
+ * and stored the base64 inline. That put every photo inside the hotel's
+ * `sections` JSONB column: a twenty-dish menu became several megabytes in one
+ * row, re-sent in full on every page view and every editor save, with no CDN
+ * and no lazy loading. On the connections this audience actually has, that is
+ * the difference between a page that loads and one that doesn't.
+ *
+ * Dish photos now go through the same `hotel-assets` bucket as the gallery, and
+ * only the URL is stored — which also makes them visible to the editor's
+ * delete-queue accounting in EditHotel.
+ */
 function MenuItemsEditor({
-  items, uploading, onUpdate, upload, onQueueDelete,
+  items, uploadFile, onUpdate, onQueueDelete,
 }: {
   items: MenuItem[];
-  uploading: boolean;
+  uploadFile: (file: File) => Promise<string>;
   onUpdate: (patch: Partial<PageSection>) => void;
-  upload: (files: FileList | null, field: "imageUrl" | "images") => Promise<void>;
   onQueueDelete: (urls: string[]) => void;
 }) {
   const inputCls = "h-9 rounded-lg text-sm bg-background";
+  // Per-item, not global: uploading a photo for one dish must not disable the
+  // upload button on every other row.
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
 
   const updateItem = (id: string, patch: Partial<MenuItem>) => {
     onUpdate({
@@ -483,10 +504,10 @@ function MenuItemsEditor({
                   <label
                     className={cn(
                       "inline-flex items-center justify-center gap-1 rounded-lg border border-border px-3 h-8 text-xs font-medium cursor-pointer hover:border-accent/60",
-                      uploading && "opacity-60 pointer-events-none",
+                      busyItemId === item.id && "opacity-60 pointer-events-none",
                     )}
                   >
-                    {uploading ? (
+                    {busyItemId === item.id ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <ImagePlus className="w-3.5 h-3.5" />
@@ -496,17 +517,24 @@ function MenuItemsEditor({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files?.[0]) {
-                          const reader = new FileReader();
-                          reader.onload = async (event) => {
-                            const dataUrl = event.target?.result as string;
-                            if (item.imageUrl) onQueueDelete([item.imageUrl]);
-                            updateItem(item.id, { imageUrl: dataUrl });
-                          };
-                          reader.readAsDataURL(e.target.files[0]);
-                        }
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
                         e.target.value = "";
+                        if (!file) return;
+                        const previous = item.imageUrl;
+                        setBusyItemId(item.id);
+                        try {
+                          const url = await uploadFile(file);
+                          // Queue the OLD image only once the new one is safely
+                          // stored — a failed upload must not orphan the photo
+                          // that is still on the page.
+                          if (previous) onQueueDelete([previous]);
+                          updateItem(item.id, { imageUrl: url });
+                        } catch {
+                          toast.error("Couldn't upload that photo.");
+                        } finally {
+                          setBusyItemId(null);
+                        }
                       }}
                     />
                   </label>

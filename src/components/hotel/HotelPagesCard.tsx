@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Home, Loader2, Plus, Trash2, Globe, FileText } from "lucide-react";
+import {
+  Home,
+  Loader2,
+  Plus,
+  Trash2,
+  Globe,
+  FileText,
+  ArrowUp,
+  ArrowDown,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,10 +98,31 @@ export function HotelPagesCard({ hotelId, slug }: { hotelId: string; slug: strin
   const [newTitle, setNewTitle] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<HotelPage | null>(null);
 
-  const list = pages ?? [];
+  const list = [...(pages ?? [])].sort(
+    (a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
+  );
   // The trigger is the real limit; this only stops a round-trip that would
   // come back as an error the owner can't act on.
   const atCap = list.length >= MAX_HOTEL_PAGES;
+
+  const movePage = (page: HotelPage, direction: -1 | 1) => {
+    const index = list.findIndex((item) => item.id === page.id);
+    const swapIndex = index + direction;
+    if (index < 0 || swapIndex < 0 || swapIndex >= list.length) return;
+
+    const other = list[swapIndex];
+    const currentOrder = page.sortOrder;
+    const nextOrder = other.sortOrder;
+
+    updatePage.mutate({
+      id: page.id,
+      input: { title: page.title, sortOrder: nextOrder },
+    });
+    updatePage.mutate({
+      id: other.id,
+      input: { title: other.title, sortOrder: currentOrder },
+    });
+  };
 
   const add = () => {
     const title = newTitle.trim();
@@ -191,6 +221,30 @@ export function HotelPagesCard({ hotelId, slug }: { hotelId: string; slug: strin
                     >
                       Make home
                     </Button>
+                    <div className="flex items-center gap-0.5 ml-auto">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-muted-foreground"
+                        disabled={list.findIndex((item) => item.id === page.id) === 0}
+                        onClick={() => movePage(page, -1)}
+                        aria-label={`Move ${page.title} up`}
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-muted-foreground"
+                        disabled={list.findIndex((item) => item.id === page.id) === list.length - 1}
+                        onClick={() => movePage(page, 1)}
+                        aria-label={`Move ${page.title} down`}
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                      </Button>
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"

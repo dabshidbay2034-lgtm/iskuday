@@ -273,7 +273,7 @@ export function organizationLd(): object {
     },
     image: `${siteUrl}/icon-512.png`,
     description:
-      "Mogadishu's rental platform for houses, apartments, hotel rooms and commercial spaces.",
+      "Mogadishu's rental platform for villas, apartments, hotel rooms and commercial spaces.",
     telephone: SITE_TELEPHONE,
     areaServed: areaServedLd(),
     address: {
@@ -356,7 +356,8 @@ export interface PropertyListingLdInput {
   id: string;
   title: string;
   description?: string | null;
-  /** DB enum: "villa" | "house" | "apartment" | "hotel" | "commercial". */
+  /** DB enum: "villa" | "apartment" | "hotel" | "bnb" | "commercial". "house" is
+   *  still accepted for pre-20260323070000 rows. */
   type?: string | null;
   /** Monthly rent, or nightly rate when `isDailyRate` (or type "hotel"). */
   price?: number | null;
@@ -436,6 +437,9 @@ function accommodationType(type?: string | null): string {
   switch ((type ?? "").toLowerCase()) {
     case "villa":
     case "house":
+      // schema.org has no Villa class; House is its nearest real type. This is
+      // the vocabulary Google reads, not a label anyone sees — the UI says
+      // "Villa" everywhere (src/lib/property-display.ts).
       return "House";
     case "apartment":
       return "Apartment";

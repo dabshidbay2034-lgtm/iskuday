@@ -8,12 +8,26 @@ import DistrictSection from "@/components/DistrictSection";
 import FeaturedProperties from "@/components/FeaturedProperties";
 import BottomNav from "@/components/BottomNav";
 import InstallBanner from "@/components/InstallBanner";
-import { Shield, Clock, HeadphonesIcon, MessageCircle } from "lucide-react";
+import { Shield, Home, MessageCircle } from "lucide-react";
 
+/**
+ * Three things the product genuinely does.
+ *
+ * The previous three each claimed something it does not do:
+ *   "Every property is checked by our team" — there is no verification step
+ *      between an owner publishing and the listing going live.
+ *   "Book your next home in minutes"        — bookings are REQUESTS; the hotel
+ *      confirms by phone, which is what the booking form itself says.
+ *   "24/7 Support"                          — support is a small team on
+ *      WhatsApp, and promising round-the-clock cover invites the complaint.
+ *
+ * Claims a visitor can disprove on their first visit cost more than they buy.
+ * These three are each observable in the product within a minute.
+ */
 const features = [
-  { icon: Shield, title: "Verified Listings", desc: "Every property is checked by our team" },
-  { icon: Clock, title: "Instant Booking", desc: "Book your next home in minutes" },
-  { icon: HeadphonesIcon, title: "24/7 Support", desc: "We're always here to help" },
+  { icon: Home, title: "Real photos, real prices", desc: "Every listing carries the owner's own photos and the actual asking price — no placeholder images." },
+  { icon: MessageCircle, title: "Talk to the owner", desc: "Contact whoever is letting the place directly. No agent in the middle taking a cut." },
+  { icon: Shield, title: "Nothing to pay us", desc: "Browsing, listing and enquiring are free. We take no commission on your rent." },
 ];
 
 const Index = () => {
@@ -37,12 +51,12 @@ const Index = () => {
       <section className="py-12 md:py-20 bg-muted/40">
         <div className="container">
           <div className="text-center max-w-xl mx-auto mb-10 md:mb-12">
-            <span className="text-xs font-bold uppercase tracking-widest text-primary mb-2 block">Why us</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-primary mb-2 block">How it works</span>
             <h2 className="text-2xl md:text-3xl font-heading font-extrabold text-foreground tracking-tight">
-              Renting made simple in Mogadishu
+              No agents, no fees, no runaround
             </h2>
             <p className="text-muted-foreground text-sm md:text-base mt-2">
-              From search to move-in, we make finding your next home effortless
+              Search by district, see what a place really looks like, and call the owner yourself.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
@@ -71,7 +85,7 @@ const Index = () => {
         <div className="container">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-glow">
+              <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-card">
                 <span className="text-primary-foreground font-heading font-extrabold text-sm">M</span>
               </div>
               <div>

@@ -1,4 +1,4 @@
-export type PropertyType = "house" | "apartment" | "hotel" | "bnb" | "commercial";
+export type PropertyType = "villa" | "apartment" | "hotel" | "bnb" | "commercial";
 
 /** What a listing is for: monthly rent or one-time sale. Only agencies can list for sale. */
 export type ListingPurpose = "rent" | "sell";

@@ -30,6 +30,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { facetSlugsWithInventory } from "./facet-urls.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_DIR = path.join(ROOT, "dist");
 const OUT_FILE = path.join(OUT_DIR, "sitemap.xml");
@@ -203,25 +205,52 @@ const STATIC_PAGES = [
  */
 async function propertyEntries(env) {
   const rows = await selectAll(env, "properties", {
-    columns: "id,updated_at,created_at,is_listed,occupancy_status,is_available,is_hidden",
+    // type/location/bedrooms are here for the facet counts below, not for the
+    // listing URLs. One query rather than two, and — the reason that matters —
+    // the facet counts are then taken from the SAME filtered array the listing
+    // entries come from. Counting a differently-filtered set is how a sitemap
+    // ends up advertising a category page that renders "0 properties found".
+    columns:
+      "id,updated_at,created_at,is_listed,occupancy_status,is_available,is_hidden,type,location,bedrooms",
     filters: "&is_available=eq.true&is_hidden=eq.false",
   });
 
-  return rows
-    .filter((p) => {
-      const isListed = p.is_listed !== false;
-      const isVacant = p.occupancy_status
-        ? p.occupancy_status === "vacant"
-        : p.is_available !== false;
-      return isListed && isVacant;
-    })
-    .map((p) => ({
-      loc: urlFor("property", p.id),
-      lastmod: lastmodOf(p.updated_at, p.created_at),
-      // Price and availability move; the listing itself does not churn hourly.
-      changefreq: "weekly",
-      priority: "0.8",
-    }));
+  const visible = rows.filter((p) => {
+    const isListed = p.is_listed !== false;
+    const isVacant = p.occupancy_status
+      ? p.occupancy_status === "vacant"
+      : p.is_available !== false;
+    return isListed && isVacant;
+  });
+
+  const entries = visible.map((p) => ({
+    loc: urlFor("property", p.id),
+    lastmod: lastmodOf(p.updated_at, p.created_at),
+    // Price and availability move; the listing itself does not churn hourly.
+    changefreq: "weekly",
+    priority: "0.8",
+  }));
+
+  return { entries, visible };
+}
+
+/**
+ * Category pages carrying enough inventory to be worth indexing.
+ *
+ * The threshold MUST match FACET_MIN_LISTINGS in src/lib/facets.ts. The page
+ * itself ships `noindex` below it, so a mismatch means either advertising a
+ * page that refuses to be indexed, or withholding one that would accept it.
+ */
+const FACET_MIN_LISTINGS = 3;
+
+function facetEntries(visibleRows) {
+  return facetSlugsWithInventory(visibleRows, FACET_MIN_LISTINGS).map((slug) => ({
+    loc: `${SITE}/properties/${slug}`,
+    // Higher than an individual listing: these are the pages built to rank for
+    // category queries, and the listings exist to be found through them.
+    changefreq: "daily",
+    priority: "0.85",
+  }));
 }
 
 /**
@@ -230,18 +259,52 @@ async function propertyEntries(env) {
  */
 async function hotelEntries(env) {
   const rows = await selectAll(env, "hotels", {
-    columns: "slug,updated_at,created_at,is_published",
+    columns: "id,slug,updated_at,created_at,is_published",
     filters: "&is_published=eq.true",
   });
 
-  return rows
-    .filter((h) => Boolean(h.slug))
-    .map((h) => ({
-      loc: urlFor("hotels", h.slug),
-      lastmod: lastmodOf(h.updated_at, h.created_at),
+  const live = rows.filter((h) => Boolean(h.slug));
+  const bySlug = new Map(live.map((h) => [h.id, h.slug]));
+
+  const entries = live.map((h) => ({
+    loc: urlFor("hotels", h.slug),
+    lastmod: lastmodOf(h.updated_at, h.created_at),
+    changefreq: "weekly",
+    priority: "0.8",
+  }));
+
+  // A hotel's OTHER published pages — /hotels/:slug/:pageSlug (20260810000002).
+  //
+  // The home page is deliberately skipped: it is served at /hotels/:slug, which
+  // is already in the list above. Emitting it a second time under its own slug
+  // would advertise two URLs for identical content and split whatever ranking
+  // the hotel earns between them.
+  let pages = [];
+  try {
+    pages = await selectAll(env, "hotel_pages", {
+      columns: "hotel_id,slug,is_home,is_published,updated_at,created_at",
+      filters: "&is_published=eq.true&is_home=eq.false",
+    });
+  } catch (err) {
+    // Same contract as everything else here: a missing table or a schema drift
+    // costs us the sub-pages, never the sitemap.
+    warn(`hotel sub-pages unavailable (${err.message}) — listing home pages only`);
+    return entries;
+  }
+
+  for (const page of pages) {
+    const hotelSlug = bySlug.get(page.hotel_id);
+    // A page whose hotel is unpublished (or absent) has no reachable URL.
+    if (!hotelSlug || !page.slug) continue;
+    entries.push({
+      loc: `${SITE}/hotels/${hotelSlug}/${page.slug}`,
+      lastmod: lastmodOf(page.updated_at, page.created_at),
       changefreq: "weekly",
-      priority: "0.8",
-    }));
+      priority: "0.7",
+    });
+  }
+
+  return entries;
 }
 
 /**
@@ -286,8 +349,15 @@ async function main() {
     ]);
 
     if (properties.status === "fulfilled") {
-      entries.push(...properties.value);
-      log(`${properties.value.length} public properties`);
+      entries.push(...properties.value.entries);
+      log(`${properties.value.entries.length} public properties`);
+
+      const facets = facetEntries(properties.value.visible);
+      entries.push(...facets);
+      log(
+        `${facets.length} category pages at or above ${FACET_MIN_LISTINGS} listings` +
+          " (the rest render but stay noindex until inventory catches up)"
+      );
     } else {
       warn(`properties unavailable (${properties.reason?.message}) — skipping listings`);
     }

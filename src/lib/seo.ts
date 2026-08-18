@@ -95,7 +95,7 @@ export function truncate(s: string, n: number): string {
  */
 export function buildTitle(pageTitle: string): string {
   const title = (pageTitle ?? "").replace(/\s+/g, " ").trim();
-  if (!title) return `${SITE_NAME} — Rent Houses, Apartments & Hotels in Mogadishu`;
+  if (!title) return `${SITE_NAME} — Rent Villas, Apartments & Hotels in Mogadishu`;
   const tail = title.toLowerCase();
   if (tail.endsWith(SITE_NAME.toLowerCase()) || tail.endsWith("mogadishurents")) return title;
   return `${title} | ${SITE_NAME}`;

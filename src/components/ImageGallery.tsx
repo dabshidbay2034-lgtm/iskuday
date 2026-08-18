@@ -48,13 +48,23 @@ const ImageGallery = ({ images, title }: ImageGalleryProps) => {
 
   return (
     <div className="relative w-full">
-      {/* Embla carousel */}
-      <div ref={emblaRef} className="overflow-hidden">
+      {/* Embla carousel.
+          Square corners on mobile because the gallery is flush to the screen
+          edge there; rounded from `md` up, where it sits inside the content
+          column and a hard rectangle would look like an unstyled placeholder. */}
+      <div ref={emblaRef} className="overflow-hidden md:rounded-2xl">
         <div className="flex">
+            {/* 4:3 on phones — near-square shows the whole room, and vertical
+                space is the one thing a phone has plenty of when scrolling.
+                2:1 on desktop: at the 864px content width that is a 432px tall
+                image, down from the 506px letterbox this had when it ran
+                full-bleed. Tall enough to read as the listing's photograph,
+                short enough that the price and the booking button are on screen
+                with it rather than below the fold. */}
           {displayImages.map((src, i) => (
             <div
               key={i}
-              className="flex-[0_0_100%] min-w-0 aspect-[4/3] md:aspect-[2.5/1]"
+              className="flex-[0_0_100%] min-w-0 aspect-[4/3] md:aspect-[2/1]"
             >
               {/* Only the first slide is on screen at load — it is the LCP, so
                   it stays eager and gets priority. Every other slide used to

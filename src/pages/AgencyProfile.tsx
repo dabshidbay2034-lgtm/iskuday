@@ -107,7 +107,7 @@ const AgencyProfile = () => {
       id: p.id,
       title: p.title,
       description: p.description,
-      type: (p.type === "villa" ? "house" : p.type) as PropertyType,
+      type: p.type as PropertyType,
       price: p.price,
       deposit: p.deposit,
       location: p.location,

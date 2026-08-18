@@ -14,7 +14,14 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        hero: "bg-accent text-accent-foreground hover:brightness-110 active:scale-[0.98] shadow-glow font-bold",
+        // `shadow-glow` (a 28px gold halo) used to sit here, which put a glow
+        // around EVERY primary button in the app. A coloured halo is a "make it
+        // pop" reflex rather than a hierarchy device: it reads as a button that
+        // is switched on or focused, so real focus and loading states have
+        // nothing distinct left to say. Weight and colour already mark this as
+        // the primary action; `shadow-card` gives it the same honest lift every
+        // other raised surface in the app gets.
+        hero: "bg-accent text-accent-foreground hover:brightness-110 active:scale-[0.98] shadow-card font-bold",
         "hero-outline": "border-2 border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 backdrop-blur-sm",
       },
       size: {

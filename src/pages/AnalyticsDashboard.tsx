@@ -265,7 +265,9 @@ export default function AnalyticsDashboard() {
                   <StatTile label="Active staff" primary={String(report.activeStaff)} secondary={`of ${report.totalStaff} total`} />
                   <StatTile label="Present today" primary={String(attendance?.present ?? "—")} secondary={attendance ? `${formatPercent(Math.round((attendance.present / Math.max(attendance.total, 1)) * 100))} of active` : undefined} />
                   <StatTile label="Late" primary={String(attendance?.late ?? "—")} />
+                  <StatTile label="Left early" primary={String(attendance?.earlyLeave ?? "—")} />
                   <StatTile label="Absent" primary={String(attendance?.absent ?? "—")} />
+                  <StatTile label="On leave" primary={String(attendance?.onLeave ?? "—")} />
                 </div>
               </section>
 

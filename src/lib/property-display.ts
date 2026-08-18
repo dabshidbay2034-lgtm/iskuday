@@ -3,16 +3,18 @@ import type { PropertyType } from "@/lib/types";
 /**
  * ONE source of truth for how a property type is shown to a renter.
  *
- * Two vocabularies reach these helpers. The database enum says `villa`, while
- * `PropertyType` says `house` — and the list surfaces (Properties,
- * FeaturedProperties, AgencyProfile) remap `villa` -> `house` on the way into
- * PropertyCard, whereas Saved and Dashboard hand the raw enum straight to the
- * badge. PropertyCard, Dashboard and PropertyDetail each used to keep a private
+ * `villa` is now the ONE spelling, matching the database enum since migration
+ * 20260323070000. It used to disagree with `PropertyType`, which said `house`,
+ * so the list surfaces remapped `villa` -> `house` on the way into PropertyCard
+ * while Saved and Dashboard passed the raw enum through. Each page kept its own
  * copy of these maps keyed on ONE of the two, so a remapped `"house"` missed
  * the lookup entirely: `typeColors[type]` came back undefined and the template
  * literal shipped `class="... undefined ..."` with a bare lowercase label,
- * intermittently, depending on which page you arrived from. Normalising both
- * spellings in one place is what stops that from coming back.
+ * intermittently, depending on which page you arrived from.
+ *
+ * `house` survives below as an INBOUND ALIAS ONLY — rows written before the
+ * migration, bookmarked `?type=house` URLs, and anything a cached client sends.
+ * Nothing in the app should emit it. Never add it back as a display label.
  *
  * Every class here is a COMPLETE LITERAL STRING inside a lookup map. Tailwind's
  * JIT scans source text, so a built-up name is never seen by the scanner and
@@ -27,8 +29,8 @@ export type PropertyDisplayType = PropertyType;
 
 /** Both spellings of every type, folded onto the display vocabulary. */
 const TYPE_ALIASES: Record<string, PropertyDisplayType> = {
-  house: "house",
-  villa: "house", // the database enum's name for the same thing
+  villa: "villa",
+  house: "villa", // pre-20260323070000 spelling, still accepted on the way in
   apartment: "apartment",
   hotel: "hotel",
   bnb: "bnb",
@@ -36,7 +38,7 @@ const TYPE_ALIASES: Record<string, PropertyDisplayType> = {
 };
 
 const TYPE_COLORS: Record<PropertyDisplayType, string> = {
-  house: "bg-success text-success-foreground",
+  villa: "bg-success text-success-foreground",
   apartment: "bg-info text-info-foreground",
   hotel: "bg-hotel text-hotel-foreground",
   // Distinct from `hotel` on purpose: both are nightly, but a renter scanning a
@@ -46,7 +48,7 @@ const TYPE_COLORS: Record<PropertyDisplayType, string> = {
 };
 
 const TYPE_LABELS: Record<PropertyDisplayType, string> = {
-  house: "House",
+  villa: "Villa",
   apartment: "Apartment",
   hotel: "Hotel",
   bnb: "BnB",

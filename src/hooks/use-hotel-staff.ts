@@ -51,6 +51,15 @@ export type HotelStaff = {
   salary: number | null;
   active: boolean;
   notes: string | null;
+  /**
+   * The staff member's shift, as `HH:MM` local wall-clock (20260902000001).
+   *
+   * Attendance compares clock-in/out against these, so a night guard on
+   * 20:00–06:00 must carry their real times rather than the table default —
+   * see the timezone note in 20260903000001.
+   */
+  scheduledStart: string;
+  scheduledEnd: string;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -128,6 +137,8 @@ type RawStaff = {
   salary: string | number | null;
   active: boolean | null;
   notes: string | null;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -186,6 +197,10 @@ function toStaff(row: RawStaff): HotelStaff {
     salary: toNum(row.salary),
     active: row.active ?? false,
     notes: row.notes ?? null,
+    // Postgres TIME comes back as `HH:MM:SS`; the inputs and the comparisons
+    // upstream all speak `HH:MM`, so narrow once here rather than at each use.
+    scheduledStart: row.scheduled_start?.slice(0, 5) ?? "09:00",
+    scheduledEnd: row.scheduled_end?.slice(0, 5) ?? "18:00",
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
   };

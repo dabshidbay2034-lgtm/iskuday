@@ -9,10 +9,26 @@ import { motion } from "framer-motion";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 
+/**
+ * ⚠ REPLACE THIS WITH A REAL PHOTOGRAPH OF A MOGADISHU PROPERTY.
+ *
+ * This is a stock image of a Western living room and it is the most damaging
+ * thing on the page. Everything else here can be argued about; a visitor who
+ * knows Mogadishu can see in one second that whoever built this has never been
+ * there, and nothing further down the page recovers that.
+ *
+ * It is also one of the most heavily reused images on Unsplash, so a fair
+ * number of visitors have already seen it on some other product's homepage.
+ *
+ * Any real photo beats any stock photo here — one of your own listings, shot on
+ * a phone, is better than the best stock library. Drop it in /public and point
+ * this at it; the overlay below is tuned for a mid-bright image, so a very dark
+ * or very light photo may want the `from-foreground/85` value adjusted.
+ */
 const heroBg = "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1920&q=85";
 
 const PROPERTY_TYPES = [
-  { value: "villa", label: "House" },
+  { value: "villa", label: "Villa" },
   { value: "apartment", label: "Apartment" },
   { value: "hotel", label: "Hotel" },
   { value: "bnb", label: "BnB" },
@@ -69,16 +85,19 @@ const HeroSection = () => {
           transition={{ duration: 0.7 }}
           className="max-w-xl"
         >
-          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 mb-5 text-xs font-semibold rounded-full bg-white/15 backdrop-blur-md text-white border border-white/20 shadow-card">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            Trusted by 10,000+ renters in Mogadishu
-          </span>
+          {/* No "trusted by N renters" badge.
+              It said 10,000+, which was invented — and a pulsing dot next to a
+              number nobody can check is the single loudest tell that copy was
+              written before the product had users. An empty space reads as
+              confident; a fabricated number reads as a placeholder nobody
+              removed. Put a real figure here when there is one. */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-heading font-extrabold text-white leading-[1.05] mb-4 tracking-tight">
-            Find a place that
-            <span className="text-white block">feels like home</span>
+            Find your next home
+            <span className="text-white block">in Mogadishu</span>
           </h1>
           <p className="text-white/80 text-base md:text-lg mb-8 max-w-md">
-            Houses, apartments &amp; hotels — browse verified listings, compare easily, and book with confidence.
+            Villas, apartments and hotel rooms across all 18 districts. See real
+            photos and prices, then deal with the owner directly.
           </p>
 
           {/* Airbnb-style segmented search pill */}
@@ -146,26 +165,37 @@ const HeroSection = () => {
             <Button
               size="lg"
               onClick={handleSearch}
-              className="rounded-full h-12 md:h-14 px-6 md:px-8 font-semibold shadow-glow shrink-0"
+              className="rounded-full h-12 md:h-14 px-6 md:px-8 font-semibold shrink-0"
             >
               <Search className="w-4 h-4" />
               <span>Search</span>
             </Button>
           </div>
 
-          {/* Quick stats */}
-          <div className="flex gap-8 mt-9">
+          {/*
+            What the platform actually does, not how big it claims to be.
+
+            This replaced three invented figures — "2,000+ properties",
+            "500+ verified owners", "4.8★ average rating" — on a platform with
+            no reviews feature and no verification step behind the word
+            "verified". Scale claims age badly and can't be defended; capability
+            claims are true on day one and still true at ten thousand listings.
+            Every line below is checkable against the product:
+            MOGADISHU_DISTRICTS has 18 entries, listings carry the owner's own
+            contact details, and the booking flow takes no payment.
+          */}
+          <dl className="flex flex-wrap gap-x-8 gap-y-4 mt-9">
             {[
-              { value: "2,000+", label: "Properties listed" },
-              { value: "500+", label: "Verified owners" },
-              { value: "4.8★", label: "Average rating" },
-            ].map((stat) => (
-              <div key={stat.label}>
-                <p className="text-xl md:text-2xl font-heading font-extrabold text-white">{stat.value}</p>
-                <p className="text-xs text-white/60 mt-0.5">{stat.label}</p>
+              { term: "18 districts", detail: "Across all of Mogadishu" },
+              { term: "Direct contact", detail: "Deal with the owner" },
+              { term: "No booking fee", detail: "We take no cut" },
+            ].map((item) => (
+              <div key={item.term}>
+                <dt className="text-base md:text-lg font-heading font-bold text-white">{item.term}</dt>
+                <dd className="text-xs text-white/60 mt-0.5">{item.detail}</dd>
               </div>
             ))}
-          </div>
+          </dl>
         </motion.div>
       </div>
     </section>

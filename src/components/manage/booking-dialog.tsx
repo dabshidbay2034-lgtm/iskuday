@@ -7,6 +7,7 @@ import {
   type ManagedProperty,
 } from "@/hooks/use-rent";
 import {
+  addDaysLocal,
   nightsBetween,
   totalFor,
   useSaveBooking,
@@ -228,9 +229,7 @@ export function BookingDialog({
                 onChange={(e) => {
                   setCheckIn(e.target.value);
                   if (!checkOut || e.target.value >= checkOut) {
-                    const next = new Date(`${e.target.value}T00:00:00`);
-                    next.setDate(next.getDate() + 1);
-                    setCheckOut(next.toISOString().slice(0, 10));
+                    setCheckOut(addDaysLocal(e.target.value, 1));
                   }
                 }}
                 className="h-11 rounded-xl"

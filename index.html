@@ -8,7 +8,10 @@
          resolve to anything but 0 — .safe-area-bottom in index.css depends on it. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>MogadishuRents — Rent Houses, Apartments & Hotels in Mogadishu</title>
-    <meta name="description" content="MogadishuRents is Mogadishu's #1 rental platform. Browse verified houses, apartments, hotels & commercial spaces. List your property or find your next home today." />
+    <!-- "Mogadishu's #1 rental platform" was an unsupportable superlative and the
+         kind of claim that reads as filler. Describe what the site is instead —
+         it also gives Google matchable terms rather than a boast. -->
+    <meta name="description" content="Find houses, apartments, hotel rooms and commercial space to rent across all 18 districts of Mogadishu. See photos and prices, and contact the owner directly." />
     <meta name="keywords" content="Mogadishu rent, houses for rent Mogadishu, apartments Mogadishu, hotel rooms Somalia, commercial space Mogadishu, kiro Mogadishu, guri kiro" />
     <meta name="author" content="MogadishuRents" />
     <meta name="robots" content="index, follow" />
@@ -67,7 +70,13 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <!-- Inter carries 700 as well as 400–600.
+         `font-bold` appears ~148 times in the app and Inter is the BODY face
+         (`--font-body`), so without a real 700 cut the browser synthesised one
+         by smearing the 600 — which is why bold body text looked slightly
+         muddy next to the headings, whose face does ship 700/800. One extra
+         weight is worth it at that usage count. -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
