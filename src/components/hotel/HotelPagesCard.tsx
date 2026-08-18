@@ -10,6 +10,7 @@ import {
   ArrowDown,
   ChevronDown,
   Search,
+  ShieldCheck,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   MAX_HOTEL_PAGES,
+  POLICY_PAGE_LABEL,
+  POLICY_PAGE_SLUG,
+  isPolicyPageSlug,
   useCreateHotelPage,
+  useCreatePolicyPage,
   useDeleteHotelPage,
   useHotelPages,
   useSetHomePage,
@@ -254,6 +259,7 @@ function PageSeoFields({
 export function HotelPagesCard({ hotelId, slug }: { hotelId: string; slug: string }) {
   const { data: pages, isPending, isError } = useHotelPages(hotelId);
   const createPage = useCreateHotelPage(hotelId);
+  const createPolicy = useCreatePolicyPage(hotelId);
   const updatePage = useUpdateHotelPage(hotelId);
   const deletePage = useDeleteHotelPage(hotelId);
   const setHome = useSetHomePage(hotelId);
@@ -267,6 +273,13 @@ export function HotelPagesCard({ hotelId, slug }: { hotelId: string; slug: strin
   // The trigger is the real limit; this only stops a round-trip that would
   // come back as an error the owner can't act on.
   const atCap = list.length >= MAX_HOTEL_PAGES;
+
+  // The prebuilt policy page. The home page's title is the hotel's name (the
+  // migration seeds it from `hotels.name`), so it is the best source for the
+  // personalised starter copy without an extra hotels lookup here.
+  const hotelName = list.find((p) => p.isHome)?.title ?? "your hotel";
+  const hasPolicy = list.some((p) => isPolicyPageSlug(p.slug));
+  const policyUsable = !hasPolicy && !atCap && !createPolicy.isPending;
 
   const movePage = (page: HotelPage, direction: -1 | 1) => {
     const index = list.findIndex((item) => item.id === page.id);
@@ -472,6 +485,37 @@ export function HotelPagesCard({ hotelId, slug }: { hotelId: string; slug: strin
           Add
         </Button>
       </div>
+
+      {/* Prebuilt policy page — one click instead of building it from scratch.
+          It lands with the bilingual starter clauses already filled in, and
+          stays a normal page the owner edits and publishes in the builder. */}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-8 w-full text-xs gap-1.5"
+        disabled={!policyUsable}
+        onClick={() => createPolicy.mutate(hotelName)}
+        title={
+          hasPolicy
+            ? `${POLICY_PAGE_LABEL} page already exists — edit it in the builder.`
+            : atCap
+              ? `You're at the ${MAX_HOTEL_PAGES}-page limit. Delete a page first.`
+              : `Add a prebuilt ${POLICY_PAGE_LABEL} page you can edit and publish.`
+        }
+      >
+        {createPolicy.isPending ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : hasPolicy ? (
+          <ShieldCheck className="w-3.5 h-3.5 text-success" />
+        ) : (
+          <ShieldCheck className="w-3.5 h-3.5" />
+        )}
+        {hasPolicy ? `${POLICY_PAGE_LABEL} page ready` : `Add ${POLICY_PAGE_LABEL} page`}
+        {!hasPolicy && atCap && (
+          <span className="text-muted-foreground">— at the page limit</span>
+        )}
+      </Button>
 
       {missingHome && (
         <p className="text-[11px] text-amber-600 dark:text-amber-500">

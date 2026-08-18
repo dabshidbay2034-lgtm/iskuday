@@ -244,6 +244,10 @@ export const STYLE_AXES_FOR: Record<SectionType, StyleAxis[]> = {
   amenities: ["columns", "width", "pad"],
   // An accordion is a single stacked column whatever the width.
   faq: ["align", "width", "pad"],
+  hours: ["align", "width", "pad"],
+  events: ["columns", "width", "pad"],
+  location: ["align", "width", "pad"],
+  reviews: ["columns", "width", "pad"],
   // Containers carry layout, never content.
   row: ["columns", "gap", "width", "pad"],
   column: ["align", "pad"],

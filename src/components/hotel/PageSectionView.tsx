@@ -53,6 +53,16 @@ export type PageBrand = {
 };
 
 /** Derive the brand from a saved hotel row. */
+/** Curly quotes around a guest quotation, without nesting quotes in JSX. */
+function quoted(text: string): string {
+  return "“" + text + "”";
+}
+
+/** Accessible name for the location map iframe. */
+function mapTitleFor(heading?: string): string {
+  return (heading && heading.trim() ? heading.trim() : "Location") + " map";
+}
+
 export function brandFromHotel(h: Hotel): PageBrand {
   return {
     name: h.name,
@@ -534,6 +544,230 @@ export function PageSectionView({
           )}
         </section>
       );
+
+    case "hours": {
+      const rows = (section.hours ?? []).filter((h) => h.label.trim() || h.value.trim());
+      return (
+        <section
+          className={cn(
+            "container scroll-mt-20",
+            pick(section.width, (w) => blockWidthClass(w), "max-w-2xl"),
+            pick(section.pad, (p) => padClass(p), "py-10"),
+          )}
+        >
+          <EditableText
+            mode={mode}
+            as="h2"
+            className="font-heading font-bold text-xl md:text-2xl text-foreground mb-4"
+            value={section.title ?? ""}
+            placeholder="Opening hours"
+            onCommit={(v) => patch({ title: v })}
+          >
+            {section.title || "Opening hours"}
+          </EditableText>
+          {rows.length === 0 ? (
+            mode === "edit" ? (
+              <p className="text-sm text-muted-foreground">
+                Add reception, restaurant and kitchen times.
+              </p>
+            ) : null
+          ) : (
+            <dl className="rounded-2xl border border-border bg-card divide-y divide-border overflow-hidden">
+              {rows.map((h) => (
+                <div key={h.id} className="flex items-baseline justify-between gap-4 px-4 py-3">
+                  <dt className="text-sm text-muted-foreground">{h.label}</dt>
+                  {/* tabular-nums so 06:00 and 23:00 line up down the column. */}
+                  <dd className="text-sm font-medium text-foreground tabular-nums text-right">
+                    {h.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </section>
+      );
+    }
+
+    case "events": {
+      const spaces = (section.spaces ?? []).filter((sp) => sp.name.trim());
+      return (
+        <section
+          className={cn(
+            "container scroll-mt-20",
+            pick(section.width, (w) => blockWidthClass(w), "max-w-5xl"),
+            pick(section.pad, (p) => padClass(p), "py-10"),
+          )}
+        >
+          <EditableText
+            mode={mode}
+            as="h2"
+            className="font-heading font-bold text-xl md:text-2xl text-foreground"
+            value={section.title ?? ""}
+            placeholder="Conference and events"
+            onCommit={(v) => patch({ title: v })}
+          >
+            {section.title || "Conference & events"}
+          </EditableText>
+          <EditableText
+            mode={mode}
+            as="p"
+            className="text-sm text-muted-foreground mt-1 mb-5"
+            value={section.subtitle ?? ""}
+            placeholder="Meetings, training and weddings"
+            onCommit={(v) => patch({ subtitle: v })}
+          >
+            {section.subtitle}
+          </EditableText>
+          {spaces.length === 0 ? (
+            mode === "edit" ? (
+              <p className="text-sm text-muted-foreground">
+                Add your halls - capacity and day rate are what people ask first.
+              </p>
+            ) : null
+          ) : (
+            <div
+              className={pick(
+                section.columns,
+                roomColumnsClass,
+                "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4",
+              )}
+            >
+              {spaces.map((sp) => (
+                <article key={sp.id} className="rounded-2xl border border-border bg-card overflow-hidden">
+                  {sp.imageUrl && (
+                    <img
+                      src={sp.imageUrl}
+                      alt={sp.name}
+                      loading="lazy"
+                      className="w-full aspect-[4/3] object-cover"
+                    />
+                  )}
+                  <div className="p-4 space-y-1">
+                    <h3 className="font-heading font-bold text-foreground text-[15px]">{sp.name}</h3>
+                    {sp.capacity && <p className="text-sm text-muted-foreground">{sp.capacity}</p>}
+                    {sp.rate && (
+                      <p
+                        className="text-sm font-semibold"
+                        style={brand.accentColor ? { color: brand.accentColor } : undefined}
+                      >
+                        {sp.rate}
+                      </p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    case "location": {
+      return (
+        <section
+          className={cn(
+            "container scroll-mt-20",
+            pick(section.width, (w) => blockWidthClass(w), "max-w-5xl"),
+            pick(section.pad, (p) => padClass(p), "py-10"),
+            pick(section.align, (a) => alignClass(a), ""),
+          )}
+        >
+          <EditableText
+            mode={mode}
+            as="h2"
+            className="font-heading font-bold text-xl md:text-2xl text-foreground mb-2"
+            value={section.heading ?? ""}
+            placeholder="Find us"
+            onCommit={(v) => patch({ heading: v })}
+          >
+            {section.heading || "Find us"}
+          </EditableText>
+          {/* Directions BEFORE the map, deliberately. Mogadishu addresses are
+              landmark-based - "off Maka Al-Mukarama Road, near the Peace
+              Garden" is how a driver is actually directed - and that text is
+              also the part a crawler can read, which an iframe is not. */}
+          <EditableText
+            mode={mode}
+            as="p"
+            className="text-sm text-muted-foreground whitespace-pre-line max-w-2xl mb-4"
+            value={section.body ?? ""}
+            placeholder="Off Maka Al-Mukarama Road, near..."
+            onCommit={(v) => patch({ body: v })}
+          >
+            {section.body}
+          </EditableText>
+          {section.mapEmbedUrl ? (
+            <div className="rounded-2xl overflow-hidden border border-border">
+              <iframe
+                src={section.mapEmbedUrl}
+                title={mapTitleFor(section.heading)}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                className="w-full h-[320px] border-0"
+              />
+            </div>
+          ) : mode === "edit" ? (
+            <p className="text-sm text-muted-foreground">
+              Paste a Google Maps embed link to show a map here.
+            </p>
+          ) : null}
+        </section>
+      );
+    }
+
+    case "reviews": {
+      const reviews = (section.reviews ?? []).filter((r) => r.quote.trim());
+      return (
+        <section
+          className={cn(
+            "container scroll-mt-20",
+            pick(section.width, (w) => blockWidthClass(w), "max-w-5xl"),
+            pick(section.pad, (p) => padClass(p), "py-10"),
+          )}
+        >
+          <EditableText
+            mode={mode}
+            as="h2"
+            className="font-heading font-bold text-xl md:text-2xl text-foreground mb-5"
+            value={section.title ?? ""}
+            placeholder="What guests say"
+            onCommit={(v) => patch({ title: v })}
+          >
+            {section.title || "What guests say"}
+          </EditableText>
+          {reviews.length === 0 ? (
+            mode === "edit" ? (
+              <p className="text-sm text-muted-foreground">Add a few guest quotes.</p>
+            ) : null
+          ) : (
+            <div
+              className={pick(
+                section.columns,
+                roomColumnsClass,
+                "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4",
+              )}
+            >
+              {reviews.map((r) => (
+                /* blockquote/cite rather than divs: these are real attributed
+                   quotations and the markup should say so. */
+                <blockquote
+                  key={r.id}
+                  className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3"
+                >
+                  <p className="text-sm text-foreground leading-relaxed">{quoted(r.quote)}</p>
+                  <footer className="text-xs text-muted-foreground mt-auto">
+                    <cite className="not-italic font-medium text-foreground">
+                      {r.author || "Guest"}
+                    </cite>
+                    {r.when ? " · " + r.when : ""}
+                  </footer>
+                </blockquote>
+              ))}
+            </div>
+          )}
+        </section>
+      );
+    }
 
     case "amenities": {
       const amenities = (section.amenities ?? [])

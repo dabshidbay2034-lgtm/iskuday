@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { PageSection, MenuItem, AmenityItem, FaqItem } from "@/components/hotel/page-sections";
+import type {
+  PageSection, MenuItem, AmenityItem, FaqItem, HoursItem, EventSpace, ReviewItem,
+} from "@/components/hotel/page-sections";
 import { AMENITY_OPTIONS, amenityOption } from "@/components/hotel/amenity-icons";
 import { uid } from "@/components/hotel/page-sections";
 import {
@@ -292,6 +294,248 @@ function ContentFields({
               </div>
             </div>
           )}
+        </>
+      );
+    }
+
+    case "hours": {
+      const rows = section.hours ?? [];
+      const setRows = (next: HoursItem[]) => onUpdate({ hours: next });
+      const patchRow = (id: string, p: Partial<HoursItem>) =>
+        setRows(rows.map((r) => (r.id === id ? { ...r, ...p } : r)));
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Section title</Label>
+            <Input
+              value={section.title ?? ""}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder="Opening hours"
+              className={inputCls}
+            />
+          </div>
+          <div className="space-y-1.5">
+            {rows.map((r) => (
+              <div key={r.id} className="flex items-center gap-1.5">
+                <Input
+                  value={r.label}
+                  onChange={(e) => patchRow(r.id, { label: e.target.value })}
+                  placeholder="Reception"
+                  className={cn(inputCls, "flex-1")}
+                />
+                <Input
+                  value={r.value}
+                  onChange={(e) => patchRow(r.id, { value: e.target.value })}
+                  placeholder="24 hours"
+                  className={cn(inputCls, "flex-1")}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setRows(rows.filter((x) => x.id !== r.id))}
+                  aria-label={"Remove " + (r.label || "row")}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full rounded-lg"
+            onClick={() => setRows([...rows, { id: uid(), label: "", value: "" }])}
+          >
+            <Plus className="w-3.5 h-3.5" /> Add line
+          </Button>
+        </>
+      );
+    }
+
+    case "events": {
+      const spaces = section.spaces ?? [];
+      const setSpaces = (next: EventSpace[]) => onUpdate({ spaces: next });
+      const patchSpace = (id: string, p: Partial<EventSpace>) =>
+        setSpaces(spaces.map((x) => (x.id === id ? { ...x, ...p } : x)));
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Section title</Label>
+            <Input
+              value={section.title ?? ""}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder="Conference & events"
+              className={inputCls}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Subtitle</Label>
+            <Input
+              value={section.subtitle ?? ""}
+              onChange={(e) => onUpdate({ subtitle: e.target.value })}
+              placeholder="Meetings, training and weddings"
+              className={inputCls}
+            />
+          </div>
+          <div className="space-y-2">
+            {spaces.map((sp, i) => (
+              <div key={sp.id} className="rounded-lg border border-border p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] text-muted-foreground">Space {i + 1}</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    onClick={() => setSpaces(spaces.filter((x) => x.id !== sp.id))}
+                    aria-label={"Remove space " + (i + 1)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                <Input
+                  value={sp.name}
+                  onChange={(e) => patchSpace(sp.id, { name: e.target.value })}
+                  placeholder="Main conference hall"
+                  className={inputCls}
+                />
+                {/* Both free text on purpose: layouts differ ("120 seated, 200
+                    standing") and hall rates here are negotiated, so a number
+                    field would force the owner to state something untrue. */}
+                <Input
+                  value={sp.capacity ?? ""}
+                  onChange={(e) => patchSpace(sp.id, { capacity: e.target.value })}
+                  placeholder="120 seated, 200 standing"
+                  className={inputCls}
+                />
+                <Input
+                  value={sp.rate ?? ""}
+                  onChange={(e) => patchSpace(sp.id, { rate: e.target.value })}
+                  placeholder="Half day $150 · Full day $250"
+                  className={inputCls}
+                />
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full rounded-lg"
+            onClick={() => setSpaces([...spaces, { id: uid(), name: "" }])}
+          >
+            <Plus className="w-3.5 h-3.5" /> Add space
+          </Button>
+        </>
+      );
+    }
+
+    case "location":
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Heading</Label>
+            <Input
+              value={section.heading ?? ""}
+              onChange={(e) => onUpdate({ heading: e.target.value })}
+              placeholder="Find us"
+              className={inputCls}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Directions</Label>
+            <Textarea
+              value={section.body ?? ""}
+              onChange={(e) => onUpdate({ body: e.target.value })}
+              className="rounded-lg text-sm min-h-[80px]"
+              placeholder="Off Maka Al-Mukarama Road, near the Peace Garden. Blue gate."
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Landmarks work better than a street address here.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Google Maps embed link</Label>
+            <Input
+              value={section.mapEmbedUrl ?? ""}
+              onChange={(e) => onUpdate({ mapEmbedUrl: e.target.value })}
+              placeholder="https://www.google.com/maps/embed?pb=..."
+              className={inputCls}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              In Google Maps: Share, then Embed a map, then copy the src link.
+            </p>
+          </div>
+        </>
+      );
+
+    case "reviews": {
+      const reviews = section.reviews ?? [];
+      const setReviews = (next: ReviewItem[]) => onUpdate({ reviews: next });
+      const patchReview = (id: string, p: Partial<ReviewItem>) =>
+        setReviews(reviews.map((x) => (x.id === id ? { ...x, ...p } : x)));
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Section title</Label>
+            <Input
+              value={section.title ?? ""}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder="What guests say"
+              className={inputCls}
+            />
+          </div>
+          <div className="space-y-2">
+            {reviews.map((r, i) => (
+              <div key={r.id} className="rounded-lg border border-border p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] text-muted-foreground">Quote {i + 1}</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    onClick={() => setReviews(reviews.filter((x) => x.id !== r.id))}
+                    aria-label={"Remove quote " + (i + 1)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                <Textarea
+                  value={r.quote}
+                  onChange={(e) => patchReview(r.id, { quote: e.target.value })}
+                  className="rounded-lg text-sm min-h-[64px]"
+                  placeholder="Clean rooms, the generator never went off, staff were kind."
+                />
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    value={r.author}
+                    onChange={(e) => patchReview(r.id, { author: e.target.value })}
+                    placeholder="Guest name"
+                    className={cn(inputCls, "flex-1")}
+                  />
+                  <Input
+                    value={r.when ?? ""}
+                    onChange={(e) => patchReview(r.id, { when: e.target.value })}
+                    placeholder="March 2026"
+                    className={cn(inputCls, "flex-1")}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full rounded-lg"
+            onClick={() => setReviews([...reviews, { id: uid(), quote: "", author: "" }])}
+          >
+            <Plus className="w-3.5 h-3.5" /> Add quote
+          </Button>
         </>
       );
     }

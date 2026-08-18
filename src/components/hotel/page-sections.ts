@@ -1,6 +1,6 @@
 import {
   AlignLeft, Image as ImageIcon, BedDouble, Columns3, Megaphone, RectangleVertical,
-  Sparkles, Phone, ListChecks, HelpCircle,
+  Sparkles, Phone, ListChecks, HelpCircle, Clock, Presentation, MapPin, Quote,
 } from "lucide-react";
 
 import type {
@@ -35,7 +35,7 @@ import type {
 /** Blocks that render content. A leaf can never contain anything. */
 export type LeafSectionType =
   | "hero" | "text" | "gallery" | "rooms" | "menu" | "cta" | "contact" | "policy"
-  | "amenities" | "faq";
+  | "amenities" | "faq" | "hours" | "events" | "location" | "reviews";
 
 /** Blocks that exist only to hold other blocks. */
 export type ContainerSectionType = "row" | "column";
@@ -44,7 +44,7 @@ export type SectionType = LeafSectionType | ContainerSectionType;
 
 export const LEAF_SECTION_TYPES: LeafSectionType[] = [
   "hero", "text", "gallery", "rooms", "menu", "cta", "contact", "policy",
-  "amenities", "faq",
+  "amenities", "faq", "hours", "events", "location", "reviews",
 ];
 
 /** One facility on an `amenities` block. */
@@ -54,6 +54,40 @@ export interface AmenityItem {
   key: string;
   /** Overrides the option's default label when the owner edits it. */
   label?: string;
+}
+
+/** One line of an `hours` block — "Reception" / "24 hours". */
+export interface HoursItem {
+  id: string;
+  label: string;
+  value: string;
+}
+
+/**
+ * One bookable space on an `events` block.
+ *
+ * Conference halls and wedding venues are a major revenue line for Mogadishu
+ * hotels — often larger than rooms — and no booking aggregator represents them,
+ * because they all think in room-nights. `capacity` and `rate` are free text
+ * ("120 seated, 200 standing", "Half day $150") rather than numbers: layouts
+ * differ and rates here are negotiated, so a single figure would force owners
+ * to state something untrue.
+ */
+export interface EventSpace {
+  id: string;
+  name: string;
+  capacity?: string;
+  rate?: string;
+  imageUrl?: string | null;
+}
+
+/** One guest quote on a `reviews` block. */
+export interface ReviewItem {
+  id: string;
+  quote: string;
+  author: string;
+  /** Free text ("March 2026") — an exact date implies a verification we do not do. */
+  when?: string;
 }
 
 /** One question/answer pair on a `faq` block. */
@@ -96,6 +130,14 @@ export interface PageSection {
   amenities?: AmenityItem[];
   /** faq */
   faqs?: FaqItem[];
+  /** hours */
+  hours?: HoursItem[];
+  /** events */
+  spaces?: EventSpace[];
+  /** location — directions live in `body`; the map embed URL here. */
+  mapEmbedUrl?: string;
+  /** reviews */
+  reviews?: ReviewItem[];
   /** cta */
   buttonLabel?: string;
   buttonHref?: string;
@@ -153,6 +195,10 @@ export const SECTION_META: Record<
   policy: { label: "Policy", Icon: AlignLeft, hint: "House rules, payment & cancellation terms — an editable policy section." },
   amenities: { label: "Facilities", Icon: ListChecks, hint: "Wi-Fi, generator, water, parking — what the hotel offers." },
   faq: { label: "FAQ", Icon: HelpCircle, hint: "Common questions with answers. Also shown in Google results." },
+  hours: { label: "Opening hours", Icon: Clock, hint: "Reception, restaurant and kitchen times." },
+  events: { label: "Events", Icon: Presentation, hint: "Conference halls and wedding spaces with capacity and rates." },
+  location: { label: "Location", Icon: MapPin, hint: "Map, landmarks and how to find the hotel." },
+  reviews: { label: "Reviews", Icon: Quote, hint: "What guests said about their stay." },
   row: { label: "Columns", Icon: Columns3, hint: "Blocks side by side — stacked on phones." },
   column: { label: "Column", Icon: RectangleVertical, hint: "One column of a row. Put blocks in it." },
 };
@@ -164,8 +210,8 @@ export const SECTION_META: Record<
  * so owners get columns by adding a row, never by placing a stray one.
  */
 export const SECTION_ORDER: SectionType[] = [
-  "hero", "text", "gallery", "rooms", "amenities", "menu", "faq", "cta",
-  "policy", "contact", "row",
+  "hero", "text", "gallery", "rooms", "amenities", "menu", "events", "reviews",
+  "hours", "faq", "cta", "policy", "location", "contact", "row",
 ];
 
 /* ── Tree shape rules ──────────────────────────────────────────────────────── */
@@ -436,6 +482,21 @@ export function newSection(type: SectionType): PageSection {
           { id: uid(), key: "security" },
         ],
       };
+    case "hours":
+      return {
+        ...base,
+        title: "Opening hours",
+        hours: [
+          { id: uid(), label: "Reception", value: "24 hours" },
+          { id: uid(), label: "Restaurant", value: "06:00 - 23:00" },
+        ],
+      };
+    case "events":
+      return { ...base, title: "Conference & events", subtitle: "", spaces: [] };
+    case "location":
+      return { ...base, heading: "Find us", body: "", mapEmbedUrl: "" };
+    case "reviews":
+      return { ...base, title: "What guests say", reviews: [] };
     case "faq":
       return { ...base, title: "Frequently asked questions", faqs: [] };
     // Seeded with its columns already in place. A row with no columns is a

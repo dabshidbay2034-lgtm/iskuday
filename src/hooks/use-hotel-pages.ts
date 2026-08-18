@@ -351,6 +351,62 @@ export function useCreateHotelPage(hotelId?: string) {
   });
 }
 
+/**
+ * Create the PREBUILT policy page for a hotel.
+ *
+ * This is `useCreateHotelPage` with the starter content already filled in —
+ * the bilingual policy clauses from `policyPageSections()` — so a hotel gets a
+ * ready-to-edit policy page in one click instead of building one from scratch.
+ *
+ * It is a normal page row: the owner can rename it, edit every clause in the
+ * builder, publish it, or delete it. The reserved slug is only the default;
+ * renaming the page re-slugs it like any other page.
+ *
+ * The 3-page cap still applies (the same count check + the database trigger),
+ * and the caller should disable the button when the hotel already has a policy
+ * page or is at the cap.
+ */
+export function useCreatePolicyPage(hotelId?: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (hotelName: string): Promise<HotelPage> => {
+      if (!hotelId) throw new Error("No hotel selected.");
+
+      const { count, error: countError } = await looseFrom("hotel_pages")
+        .select("id", { count: "exact", head: true })
+        .eq("hotel_id", hotelId);
+      if (countError) throw countError;
+      if ((count ?? 0) >= MAX_HOTEL_PAGES) {
+        throw new Error(
+          `A hotel can have at most ${MAX_HOTEL_PAGES} pages. Delete one before adding another.`,
+        );
+      }
+
+      const { data, error } = await looseFrom("hotel_pages")
+        .insert({
+          hotel_id: hotelId,
+          slug: POLICY_PAGE_SLUG,
+          title: POLICY_PAGE_LABEL,
+          sections: policyPageSections(hotelName),
+          sort_order: count ?? 0,
+          is_home: false,
+          is_published: false,
+        })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return toHotelPage(data as RawHotelPage);
+    },
+    onSuccess: (page) => {
+      toast.success("Policy page added — edit it in the builder, then publish.");
+      queryClient.invalidateQueries({ queryKey: hotelPagesKey(hotelId) });
+    },
+    onError: (error: unknown) =>
+      toast.error(describePageError(error, "Couldn't add the policy page")),
+  });
+}
+
 /** Save one page. `is_home` is not settable here — use useSetHomePage(). */
 export function useUpdateHotelPage(hotelId?: string) {
   const queryClient = useQueryClient();
