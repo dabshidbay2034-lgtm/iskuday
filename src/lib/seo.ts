@@ -65,6 +65,23 @@ export function absoluteUrl(path: string): string {
 }
 
 /**
+ * Where Google stops reading.
+ *
+ * Both are approximations of a pixel width, not hard limits — the SERP measures
+ * rendered width, so a title of capitals runs out sooner than one of lowercase.
+ * They are exported because two places need the SAME number: `truncate` cuts
+ * descriptions to META_DESCRIPTION_MAX before they reach the tag, and the hotel
+ * page editor counts a hotelier's typing against both so exceeding them is
+ * visible while writing rather than discovered in a search result weeks later.
+ *
+ * Over-length is not an error anywhere: the title is left intact (the SERP
+ * ellipsis is Google's to add) and the description is truncated at a word
+ * boundary. The counters exist to make the cut predictable, not to block it.
+ */
+export const TITLE_SERP_MAX = 60;
+export const META_DESCRIPTION_MAX = 158;
+
+/**
  * Shorten a description to `n` characters at a word boundary.
  *
  * Google truncates meta descriptions around 155-160 chars, and a snippet cut

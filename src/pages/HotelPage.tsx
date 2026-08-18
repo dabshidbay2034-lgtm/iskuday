@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
 import Seo from "@/components/Seo";
-import { absoluteUrl, buildTitle, truncate } from "@/lib/seo";
+import { absoluteUrl, buildTitle, META_DESCRIPTION_MAX, truncate } from "@/lib/seo";
 import { breadcrumbLd, hotelLd } from "@/lib/structured-data";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -174,19 +174,35 @@ const HotelPage = () => {
   const canonicalPath = onHome
     ? `/hotels/${hotel.slug}`
     : `/hotels/${hotel.slug}/${currentPage?.slug ?? ""}`;
-  const pageTitle = onHome
+  // What this page would be called if nobody said otherwise.
+  const generatedTitle = onHome
     ? `${hotel.name} — Hotel in Mogadishu`
     : `${currentPage?.title ?? ""} — ${hotel.name}`;
 
-  // Owner-written copy first, tagline second, generated line last. All three are
-  // user-controlled free text, so everything goes through truncate() — which
-  // also collapses the newlines a textarea puts in, since a raw \n inside a
-  // meta content="" attribute is what makes unfurlers drop the description.
+  // …and the hotel's own wording when it wrote some (20260904000002). NULL —
+  // which is every page nobody has edited — keeps the generated string, so no
+  // title that Google has already indexed moves on its own.
+  //
+  // The override still goes through buildTitle() below, exactly like the
+  // generated one: a hotelier who writes "Rooms & Rates at Jazeera Palace"
+  // should get the brand suffix appended, and one who already ended their line
+  // with the brand should not get it twice. That judgement lives in buildTitle,
+  // and duplicating it here is how the two paths would drift apart.
+  const pageTitle = currentPage?.seoTitle?.trim() || generatedTitle;
+
+  // Owner-written snippet first, then the page copy, tagline, generated line.
+  // All of them are user-controlled free text, so everything goes through
+  // truncate() — which also collapses the newlines a textarea puts in, since a
+  // raw \n inside a meta content="" attribute is what makes unfurlers drop the
+  // description. seo_description is a textarea with no length limit in the
+  // database (deliberately — see the migration), so it needs that cut most of
+  // all: a 400-character snippet is the one failure this field can produce.
   const hotelDescription = truncate(
-    hotel.description ||
+    currentPage?.seoDescription?.trim() ||
+      hotel.description ||
       hotel.tagline ||
       `${hotel.name} — hotel rooms in Mogadishu, Somalia. See photos, nightly rates and contact details, and book direct.`,
-    158,
+    META_DESCRIPTION_MAX,
   );
 
   return (
