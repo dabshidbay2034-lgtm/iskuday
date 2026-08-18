@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { describeWriteError } from "@/hooks/use-rent";
+import { isHomeSlug } from "@/lib/hotel-links";
 import {
   defaultPageSections, sectionsFor, sectionsFromJson, type PageSection,
 } from "@/components/hotel/page-sections";
@@ -100,10 +101,14 @@ export function pageSlugify(title: string): string {
   );
 }
 
-/** `home` and `''` both address the landing page (see the migration's STEP 2). */
-export function isHomeSlug(slug: string | undefined | null): boolean {
-  return slug === "" || slug == null || slug === "home";
-}
+/**
+ * `home` and `''` both address the landing page (see the migration's STEP 2).
+ *
+ * Defined in `@/lib/hotel-links` — a pure module with no Supabase import — so
+ * that link-building components can use it without dragging the whole data
+ * layer in. Re-exported here because this is where callers already look for it.
+ */
+export { isHomeSlug };
 
 /**
  * The blocks to render for a page, back-filling the HOME page from the hotel's

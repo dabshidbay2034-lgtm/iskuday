@@ -11,6 +11,8 @@ import { breadcrumbLd, hotelLd } from "@/lib/structured-data";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { brandFromHotel, PageSectionView } from "@/components/hotel/PageSectionView";
+import HotelFooter from "@/components/hotel/HotelFooter";
+import { platformHotelPagePath } from "@/lib/hotel-links";
 import {
   usePublicHotelPage, useHotelRooms, type HotelRoomProperty,
 } from "@/hooks/use-hotels";
@@ -164,10 +166,9 @@ const HotelPage = () => {
   // not a site, and a nav with a single item is noise.
   const showMenu = menuPages.length > 1;
   const onHome = !safePageSlug || isHomeSlug(currentPage?.slug);
-  const pagePath = (pageSlugValue: string, isHome: boolean) =>
-    isHome || isHomeSlug(pageSlugValue)
-      ? `/hotels/${hotel.slug}`
-      : `/hotels/${hotel.slug}/${pageSlugValue}`;
+  // One path builder for the top menu AND the footer, so the two can't disagree
+  // about where a page lives. The subdomain passes the tenant builder instead.
+  const pagePath = platformHotelPagePath(hotel.slug);
 
   // A sub-page is its own document and must say so. Pointing every page of a
   // hotel at /hotels/:slug would collapse the whole site into one URL.
@@ -257,7 +258,7 @@ const HotelPage = () => {
         >
           <div className="container max-w-5xl flex items-center gap-1 overflow-x-auto py-2">
             {menuPages.map((page) => {
-              const href = pagePath(page.slug, page.isHome);
+              const href = pagePath(page);
               const active = page.isHome ? onHome : currentPage?.slug === page.slug;
               return (
                 <Link
@@ -288,14 +289,20 @@ const HotelPage = () => {
         />
       ))}
 
-      {!hasContact && (
-        <div className="border-t border-border">
-          <div className="container max-w-5xl py-5 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-            <p>© {new Date().getFullYear()} {hotel.name} · Powered by Mogadishu Rents</p>
-            <a href="/" className="hover:text-foreground transition-colors">Mogadishu Rents</a>
-          </div>
-        </div>
-      )}
+      {/* ── The site's footer ────────────────────────────────────────────
+          Every page ends the same way, which is most of what makes a hotel's
+          three pages read as one website rather than three documents. On a page
+          that already has a `contact` block the footer knows to shrink to just
+          the page links instead of repeating the details directly above it. */}
+      <HotelFooter
+        brand={brand}
+        pages={menuPages}
+        pagePath={pagePath}
+        activePageId={currentPage?.id}
+        linkMode="router"
+        hasContactSection={hasContact}
+      />
+
 
       <BottomNav />
     </div>
