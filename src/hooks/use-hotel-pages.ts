@@ -71,6 +71,16 @@ export type HotelPage = {
   sortOrder: number;
   isHome: boolean;
   isPublished: boolean;
+  /**
+   * Owner-written search metadata (migration 20260904000002).
+   *
+   * `null` is meaningful and is the state every page starts in: it means "keep
+   * generating it", not "not filled in yet". HotelPage.tsx only prefers these
+   * when they are present AND non-blank, so clearing the box in the editor
+   * restores the generated title/description with no reset button.
+   */
+  seoTitle: string | null;
+  seoDescription: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -84,9 +94,27 @@ type RawHotelPage = {
   sort_order: number | null;
   is_home: boolean | null;
   is_published: boolean | null;
+  // Optional, not just nullable: rows read before 20260904000002 is applied
+  // simply don't carry these keys at all.
+  seo_title?: string | null;
+  seo_description?: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
+
+/**
+ * Blank is the same as absent for the SEO overrides.
+ *
+ * The editor already writes NULL for an emptied box, but a row can also arrive
+ * holding '' — from a client that predates that rule, or from a whitespace-only
+ * save. Publishing `<title></title>` because someone typed a space is a worse
+ * outcome than falling back, so the collapse happens once, here, and every
+ * consumer can then test for null alone.
+ */
+function blankToNull(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
 
 function toHotelPage(row: RawHotelPage): HotelPage {
   return {
@@ -101,6 +129,8 @@ function toHotelPage(row: RawHotelPage): HotelPage {
     sortOrder: Number(row.sort_order ?? 0),
     isHome: row.is_home ?? false,
     isPublished: row.is_published ?? false,
+    seoTitle: blankToNull(row.seo_title),
+    seoDescription: blankToNull(row.seo_description),
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
   };
@@ -248,6 +278,20 @@ export type HotelPageInput = {
   sections?: PageSection[];
   sortOrder?: number;
   isPublished?: boolean;
+  /**
+   * Owner-written search metadata. Three distinct states, all reachable:
+   *
+   *   undefined → don't touch this column (the patch-only rule below)
+   *   ''        → the owner emptied the box; stored as NULL so the page goes
+   *               back to the generated title/description
+   *   text      → the override
+   *
+   * That is why these are `string | null` and not just `string`: "leave it
+   * alone" and "put it back to the default" are different intentions, and a
+   * single optional string cannot say both.
+   */
+  seoTitle?: string | null;
+  seoDescription?: string | null;
 };
 
 /**
@@ -288,6 +332,10 @@ export function useCreateHotelPage(hotelId?: string) {
           // "add page" button would fail with a confusing index name.
           is_home: false,
           is_published: input.isPublished ?? false,
+          // blankToNull, so an empty box is stored as NULL ("generate it")
+          // rather than as an empty string that reads as a real override.
+          seo_title: blankToNull(input.seoTitle),
+          seo_description: blankToNull(input.seoDescription),
         })
         .select("*")
         .single();
@@ -320,6 +368,13 @@ export function useUpdateHotelPage(hotelId?: string) {
       if (input.sections !== undefined) patch.sections = input.sections;
       if (input.sortOrder !== undefined) patch.sort_order = input.sortOrder;
       if (input.isPublished !== undefined) patch.is_published = input.isPublished;
+      // `undefined` means "not being edited here" and is skipped like the rest;
+      // '' means "I cleared it", which blankToNull turns into the NULL that
+      // restores the generated metadata.
+      if (input.seoTitle !== undefined) patch.seo_title = blankToNull(input.seoTitle);
+      if (input.seoDescription !== undefined) {
+        patch.seo_description = blankToNull(input.seoDescription);
+      }
 
       const { data, error } = await looseFrom("hotel_pages")
         .update(patch)

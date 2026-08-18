@@ -8,12 +8,20 @@ import {
   FileText,
   ArrowUp,
   ArrowDown,
+  ChevronDown,
+  Search,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
+import { META_DESCRIPTION_MAX, TITLE_SERP_MAX } from "@/lib/seo";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -85,6 +93,161 @@ function PageTitleInput({
       className="h-7 text-xs border-0 shadow-none px-1 focus-visible:ring-1"
       aria-label={`Rename ${page.title}`}
     />
+  );
+}
+
+/**
+ * The live "x / 60" under a search-metadata box.
+ *
+ * The count is the whole point of this control. Going over the limit is not an
+ * error anywhere — the database has no CHECK, the renderer truncates the
+ * description at a word boundary and leaves the title alone — so a hotelier who
+ * writes 240 characters gets no warning at all unless something says so here.
+ * That is the failure this feature is meant to prevent: a snippet that reads
+ * fine in the editor and is cut mid-sentence in Google weeks later.
+ *
+ * Amber, not red: over-length copy still publishes and still works.
+ */
+function CharCount({ value, max }: { value: string; max: number }) {
+  const used = value.trim().length;
+  const over = used > max;
+  return (
+    <span
+      className={cn(
+        "text-[10px] tabular-nums shrink-0",
+        over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground",
+      )}
+    >
+      {used}/{max}
+      {over && <span className="ml-1">· Google will cut this short</span>}
+    </span>
+  );
+}
+
+/**
+ * What this page looks like in a Google result — the hotel's own title and
+ * description, or nothing at all.
+ *
+ * ── BLANK IS A REAL ANSWER ─────────────────────────────────────────────────
+ * Empty means "write it for me", and it is the state every page starts in. The
+ * hook sends NULL for a cleared box, so emptying a field genuinely restores the
+ * generated metadata (`<page> — <hotel>` and the hotel's about text) rather
+ * than publishing an empty tag. That is why there is no "reset" button: the
+ * delete key already is one, and the placeholder shows what will come back.
+ *
+ * Drafts are local and commit on blur for the same reason as PageTitleInput
+ * above — bound straight to the query cache, the refetch after each save would
+ * overwrite the textarea mid-sentence.
+ *
+ * Collapsed by default. Most hotels should never open it; the generated title
+ * is a reasonable one, and this is the drawer for the hotel that has something
+ * better to say.
+ */
+function PageSeoFields({
+  page,
+  onSave,
+}: {
+  page: HotelPage;
+  onSave: (input: { seoTitle?: string; seoDescription?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(page.seoTitle ?? "");
+  const [description, setDescription] = useState(page.seoDescription ?? "");
+
+  // Compare against the stored value, not against "", so blurring an untouched
+  // field writes nothing — otherwise merely opening the drawer and clicking
+  // around would fire an UPDATE per page.
+  const commitTitle = () => {
+    if (title.trim() === (page.seoTitle ?? "")) return;
+    onSave({ seoTitle: title });
+  };
+  const commitDescription = () => {
+    if (description.trim() === (page.seoDescription ?? "")) return;
+    onSave({ seoDescription: description });
+  };
+
+  const customised = Boolean(page.seoTitle || page.seoDescription);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="pl-5">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Search className="w-3 h-3" />
+          How this page looks on Google
+          {customised && (
+            <Badge variant="secondary" className="text-[9px] rounded-full px-1.5 py-0">
+              Custom
+            </Badge>
+          )}
+          <ChevronDown
+            className={cn("w-3 h-3 transition-transform", open && "rotate-180")}
+          />
+        </button>
+      </CollapsibleTrigger>
+
+      <CollapsibleContent className="pt-2 space-y-2.5">
+        <div className="space-y-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <label
+              htmlFor={`seo-title-${page.id}`}
+              className="text-[10px] font-medium text-foreground"
+            >
+              Google title
+            </label>
+            <CharCount value={title} max={TITLE_SERP_MAX} />
+          </div>
+          <Input
+            id={`seo-title-${page.id}`}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") setTitle(page.seoTitle ?? "");
+            }}
+            placeholder={
+              page.isHome ? "e.g. Beachfront rooms in Lido" : `${page.title} — your hotel name`
+            }
+            className="h-7 text-xs"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            The blue line people click in Google. Leave it empty and we write one
+            from the page name and your hotel name.
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <label
+              htmlFor={`seo-description-${page.id}`}
+              className="text-[10px] font-medium text-foreground"
+            >
+              Google description
+            </label>
+            <CharCount value={description} max={META_DESCRIPTION_MAX} />
+          </div>
+          <Textarea
+            id={`seo-description-${page.id}`}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={commitDescription}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setDescription(page.seoDescription ?? "");
+            }}
+            placeholder="One or two sentences a guest would read before deciding to click."
+            rows={3}
+            className="min-h-0 text-xs py-1.5"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            The grey text under the title. Leave it empty and we use your hotel's
+            About text instead.
+          </p>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -192,6 +355,16 @@ export function HotelPagesCard({ hotelId, slug }: { hotelId: string; slug: strin
             <p className="text-[10px] text-muted-foreground pl-5 truncate">
               /{slug}{page.isHome ? "" : `/${page.slug}`}
             </p>
+
+            {/* `title: page.title` is passed on every write because the update
+                hook always sends it; only the SEO keys present in the patch are
+                touched, so saving a description can't clobber a title. */}
+            <PageSeoFields
+              page={page}
+              onSave={(input) =>
+                updatePage.mutate({ id: page.id, input: { title: page.title, ...input } })
+              }
+            />
 
             <div className="flex items-center gap-2 pl-5">
               <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
