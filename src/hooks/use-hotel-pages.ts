@@ -11,9 +11,10 @@ import {
 /**
  * Multi-page hotel websites (migration 20260810000001).
  *
- * A hotel is no longer one page but a small SITE: up to three `hotel_pages`
- * rows, each carrying its own ordered `sections` block list, its own slug and
- * its own publish switch. Exactly one page per hotel is the home page.
+ * A hotel is no longer one page but a small SITE: up to MAX_HOTEL_PAGES
+ * `hotel_pages` rows, each carrying its own ordered `sections` block list, its
+ * own slug and its own publish switch. Exactly one page per hotel is the home
+ * page.
  *
  * Relationship to `hotels.sections`: the home page's blocks are ALSO still
  * mirrored on the hotel row, because the existing editor and public page read
@@ -30,8 +31,15 @@ import {
 
 /** The database-enforced page limit (trigger `hotel_pages_cap`), mirrored here
  *  only so the UI can disable "Add page" before the round-trip. The trigger is
- *  the real limit — this constant is a courtesy. */
-export const MAX_HOTEL_PAGES = 3;
+ *  the real limit — this constant is a courtesy.
+ *
+ *  Raised 3 → 8 by migration 20260904000001. Keep the two in lock-step: if this
+ *  number drifts above the trigger's, the UI happily offers an "Add page"
+ *  button whose insert the database then rejects. The cap is a PRODUCT
+ *  decision, not a technical one — a hotel's nav has to stay readable at a
+ *  glance, and an open-ended limit just collects half-finished pages nobody
+ *  ever publishes or deletes. */
+export const MAX_HOTEL_PAGES = 8;
 
 /**
  * The PREBUILT policy page: its fixed slug and the display label.
@@ -150,9 +158,13 @@ export function sectionsForPage(
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /**
- * The 3-page cap is raised by a database trigger as a check_violation, so the
+ * The page cap is raised by a database trigger as a check_violation, so the
  * raw message is a sentence about triggers. Translate it before it reaches a
  * toast; everything else falls through to the shared RLS-aware translator.
+ *
+ * The match is on `at most \d+ pages`, not on the current number, so an older
+ * database still running the previous cap is recognised too — the toast then
+ * quotes MAX_HOTEL_PAGES, which is the limit the UI is enforcing.
  */
 function describePageError(error: unknown, fallback: string): string {
   const message = (error as { message?: string } | null)?.message ?? "";
