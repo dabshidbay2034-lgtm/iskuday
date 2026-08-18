@@ -5,6 +5,10 @@ import { AlertTriangle, Hotel as HotelIcon, Mail, MapPin, MessageCircle, Phone }
 
 import { supabase } from "@/integrations/supabase/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import {
+  HotelBookButton, HotelMobileActionBar, hasHotelContact,
+} from "@/components/hotel/HotelActionBar";
 import { PLATFORM_ROOT_DOMAIN, platformUrl } from "@/lib/tenant";
 
 /**
@@ -201,16 +205,11 @@ function TenantHeader({ hotel, pages }: { hotel: TenantHotel; pages: TenantNavPa
           ))}
         </nav>
 
-        {hotel.contactPhone && (
-          <a
-            href={`tel:${hotel.contactPhone}`}
-            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: hotel.accentColor }}
-          >
-            <Phone className="w-4 h-4" />
-            <span className="hidden sm:inline">Call</span>
-          </a>
-        )}
+        {/* Was a phone-only "Call" pill, which ignored the channel most of this
+            audience actually books on. Same component as the platform page's
+            nav button, so both surfaces prefer WhatsApp and both render
+            nothing when the hotel has published no number. */}
+        <HotelBookButton hotel={hotel} />
       </div>
 
       {/* Mobile nav: a scroll strip beats a hamburger here — no state, no focus
@@ -413,11 +412,24 @@ const TenantShell = ({ subdomain, children }: TenantShellProps) => {
     );
   }
 
+  // There is no <BottomNav/> on a tenant host — this is the hotel's own site,
+  // not a page inside ours — so the action bar has the bottom of the screen to
+  // itself and nothing to compete with. The padding is conditional because a
+  // hotel with no reachable number renders no bar and should not get a strip of
+  // dead space above its footer.
+  const showActionBar = hasHotelContact(hotel);
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div
+      className={cn(
+        "min-h-screen bg-background flex flex-col",
+        showActionBar && "pb-20 md:pb-0",
+      )}
+    >
       <TenantHeader hotel={hotel} pages={pages ?? []} />
       <main className="flex-1">{children}</main>
       <TenantFooter hotel={hotel} />
+      <HotelMobileActionBar hotel={hotel} />
     </div>
   );
 };
