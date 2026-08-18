@@ -199,8 +199,19 @@ const Properties = () => {
 
   const activeType = facet?.type ?? (searchParams.get("type") || "");
   const activePurpose = searchParams.get("purpose") || "";
+  // Folded through canonicalDistrict so an inbound ?district=hodan matches the
+  // stored "Hodan". The filter at the bottom of this component compares
+  // district names with ===, so a lowercase or oddly-cased value from a shared
+  // link, an old bookmark or a scraper filtered out EVERY property and rendered
+  // an empty page. canonicalDistrict was already here doing exactly this fold
+  // for the canonical URL; it just never reached the filter input.
+  //
+  // An unrecognised name falls back to "" (show everything) rather than to
+  // itself. `seoForFilters` already marks an unknown district noindex, so the
+  // visitor gets results instead of a dead page and Google is not offered it.
   const districtParam =
-    facet?.district ?? (searchParams.get("district") || searchParams.get("location") || "");
+    facet?.district ??
+    (canonicalDistrict(searchParams.get("district") || searchParams.get("location") || "") ?? "");
   const minPriceParam = searchParams.get("minPrice") || "";
   const maxPriceParam = searchParams.get("maxPrice") || "";
   const queryParam = searchParams.get("q") || "";

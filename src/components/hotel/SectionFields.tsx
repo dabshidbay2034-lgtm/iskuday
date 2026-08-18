@@ -212,6 +212,27 @@ function ContentFields({
         </>
       );
 
+    // A policy clause — a rule title plus the rule text. Same shape as a text
+    // block, so the owner edits it inline the same way.
+    case "policy":
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Policy title</Label>
+            <Input value={section.heading ?? ""} onChange={(e) => onUpdate({ heading: e.target.value })} placeholder="Check-in & check-out" className={inputCls} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Policy text</Label>
+            <Textarea
+              value={section.body ?? ""}
+              onChange={(e) => onUpdate({ body: e.target.value })}
+              className="rounded-lg text-sm min-h-[96px]"
+              placeholder="Check-in is from 14:00, check-out by 12:00…"
+            />
+          </div>
+        </>
+      );
+
     case "gallery":
       return (
         <>

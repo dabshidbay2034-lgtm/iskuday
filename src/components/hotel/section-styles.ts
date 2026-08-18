@@ -237,6 +237,13 @@ export const STYLE_AXES_FOR: Record<SectionType, StyleAxis[]> = {
   menu: ["columns", "width", "pad"],
   cta: ["align", "width", "pad"],
   contact: ["align", "width", "pad"],
+  // A policy clause reads like a text block with a rule label.
+  policy: ["align", "width", "pad"],
+  // A grid of facilities, so it takes the same "how many across" axis the
+  // room and menu grids do.
+  amenities: ["columns", "width", "pad"],
+  // An accordion is a single stacked column whatever the width.
+  faq: ["align", "width", "pad"],
   // Containers carry layout, never content.
   row: ["columns", "gap", "width", "pad"],
   column: ["align", "pad"],

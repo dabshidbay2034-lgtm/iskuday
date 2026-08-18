@@ -33,7 +33,9 @@ import type {
  */
 
 /** Blocks that render content. A leaf can never contain anything. */
-export type LeafSectionType = "hero" | "text" | "gallery" | "rooms" | "menu" | "cta" | "contact";
+export type LeafSectionType =
+  | "hero" | "text" | "gallery" | "rooms" | "menu" | "cta" | "contact" | "policy"
+  | "amenities" | "faq";
 
 /** Blocks that exist only to hold other blocks. */
 export type ContainerSectionType = "row" | "column";
@@ -41,8 +43,25 @@ export type ContainerSectionType = "row" | "column";
 export type SectionType = LeafSectionType | ContainerSectionType;
 
 export const LEAF_SECTION_TYPES: LeafSectionType[] = [
-  "hero", "text", "gallery", "rooms", "menu", "cta", "contact",
+  "hero", "text", "gallery", "rooms", "menu", "cta", "contact", "policy",
+  "amenities", "faq",
 ];
+
+/** One facility on an `amenities` block. */
+export interface AmenityItem {
+  id: string;
+  /** A key from AMENITY_OPTIONS in ./amenity-icons. Frozen once saved. */
+  key: string;
+  /** Overrides the option's default label when the owner edits it. */
+  label?: string;
+}
+
+/** One question/answer pair on a `faq` block. */
+export interface FaqItem {
+  id: string;
+  question: string;
+  answer: string;
+}
 
 export interface MenuItem {
   id: string;
@@ -73,6 +92,10 @@ export interface PageSection {
   subtitle?: string;
   /** menu */
   items?: MenuItem[];
+  /** amenities */
+  amenities?: AmenityItem[];
+  /** faq */
+  faqs?: FaqItem[];
   /** cta */
   buttonLabel?: string;
   buttonHref?: string;
@@ -127,6 +150,7 @@ export const SECTION_META: Record<
   menu: { label: "Menu", Icon: ImageIcon, hint: "Food & drinks with prices and photos." },
   cta: { label: "Button", Icon: Megaphone, hint: "A highlight band with a button." },
   contact: { label: "Contact", Icon: Phone, hint: "Phone, WhatsApp, map and socials." },
+  policy: { label: "Policy", Icon: AlignLeft, hint: "House rules, payment & cancellation terms — an editable policy section." },
   row: { label: "Columns", Icon: Columns3, hint: "Blocks side by side — stacked on phones." },
   column: { label: "Column", Icon: RectangleVertical, hint: "One column of a row. Put blocks in it." },
 };
@@ -138,7 +162,8 @@ export const SECTION_META: Record<
  * so owners get columns by adding a row, never by placing a stray one.
  */
 export const SECTION_ORDER: SectionType[] = [
-  "hero", "text", "gallery", "rooms", "menu", "cta", "contact", "row",
+  "hero", "text", "gallery", "rooms", "amenities", "menu", "faq", "cta",
+  "policy", "contact", "row",
 ];
 
 /* ── Tree shape rules ──────────────────────────────────────────────────────── */
@@ -393,6 +418,24 @@ export function newSection(type: SectionType): PageSection {
       return { ...base, heading: "", buttonLabel: "Book now", buttonHref: "#contact" };
     case "contact":
       return { ...base, heading: "Get in touch" };
+    case "policy":
+      return { ...base, heading: "Hotel policy", body: "" };
+    // Seeded with the four facilities that decide a booking in Mogadishu, so a
+    // freshly added block is already useful instead of an empty grid the owner
+    // has to figure out. They can remove any of them.
+    case "amenities":
+      return {
+        ...base,
+        title: "Facilities",
+        amenities: [
+          { id: uid(), key: "wifi" },
+          { id: uid(), key: "generator" },
+          { id: uid(), key: "water" },
+          { id: uid(), key: "security" },
+        ],
+      };
+    case "faq":
+      return { ...base, title: "Frequently asked questions", faqs: [] };
     // Seeded with its columns already in place. A row with no columns is a
     // dead end — nothing can be dropped into a row except a column, so an
     // empty one would need a second, non-obvious step before it did anything.
@@ -424,6 +467,66 @@ export function defaultPageSections(input: {
   gallery.images = input.gallery ?? [];
 
   return [hero, text, gallery, newSection("rooms"), newSection("contact")];
+}
+
+/**
+ * The prebuilt POLICY page blocks — bilingual defaults an owner customizes
+ * before publishing, exactly like every other builder page.
+ *
+ * A policy page is plain `text` sections plus a closing `cta`, so it inherits
+ * the whole existing editor (heading + body per block, move/duplicate/delete)
+ * with zero new field machinery. The starter copy covers the sections hotels
+ * actually get asked for in Mogadishu: check-in/out, payment, cancellation,
+ * house rules, children/pets, liability and privacy.
+ *
+ * Every string is a SEPARATE text block (not one giant block) so the owner can
+ * delete, reorder or duplicate individual clauses instead of editing one blob.
+ * `accentName` lets the copy address the hotel by name wherever we know it.
+ */
+export function policyPageSections(hotelName: string): PageSection[] {
+  const clause = (heading: string, body: string): PageSection => {
+    const s = newSection("policy");
+    s.heading = heading;
+    s.body = body;
+    return s;
+  };
+
+  const intro = newSection("text");
+  intro.heading = "Hotel policies";
+  intro.body = `Thank you for choosing ${hotelName}. Please read these policies before you book — they keep things clear for both you and our team.`;
+
+  return [
+    intro,
+    clause(
+      "Check-in & check-out",
+      "Check-in is from 14:00 and check-out is by 12:00. Early check-in and late check-out depend on availability — ask the front desk and we'll do our best. Please present a valid ID at check-in.",
+    ),
+    clause(
+      "Payment",
+      "Payment is on arrival unless agreed otherwise. We accept EVC, Zaad, Sifalo Pay, cash and card where available. A security deposit may be requested on check-in and is returned at check-out, minus any damage or extras.",
+    ),
+    clause(
+      "Cancellation",
+      "Free cancellation until 24 hours before arrival. After that, the first night may be charged. During busy periods, prepaid reservations may be non-refundable — please check your booking confirmation for details.",
+    ),
+    clause(
+      "House rules",
+      "Quiet hours run from 22:00 to 08:00. Smoking is not allowed in the rooms or common areas. Drugs are not permitted at any time. Please dispose of waste responsibly and treat the property with care.",
+    ),
+    clause(
+      "Children & pets",
+      "Children are welcome. Pets are allowed only by prior arrangement — please let the front desk know when you book. A small cleaning fee or deposit may apply.",
+    ),
+    clause(
+      "Liability",
+      `${hotelName} is not liable for loss or damage to guests' personal belongings. Please use the safe provided in your room and lock your door at all times.`,
+    ),
+    clause(
+      "Privacy",
+      "We process your stay data to deliver your reservation and to contact you about your booking. We never share your details with third parties for marketing.",
+    ),
+    newSection("cta"),
+  ];
 }
 
 /**

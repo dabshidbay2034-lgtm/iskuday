@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { describeWriteError } from "@/hooks/use-rent";
 import {
-  defaultPageSections, sectionsFor, sectionsFromJson, type PageSection,
+  defaultPageSections, policyPageSections, sectionsFor, sectionsFromJson,
+  type PageSection,
 } from "@/components/hotel/page-sections";
 
 /**
@@ -31,6 +32,24 @@ import {
  *  only so the UI can disable "Add page" before the round-trip. The trigger is
  *  the real limit — this constant is a courtesy. */
 export const MAX_HOTEL_PAGES = 3;
+
+/**
+ * The PREBUILT policy page: its fixed slug and the display label.
+ *
+ * A hotel is offered a ready-made policy page ("Add policy page") that lands
+ * at `/policy` on the subdomain and `/hotels/:slug/policy` on the apex. It is a
+ * normal `hotel_pages` row like any other — the owner edits, renames and
+ * publishes it with the regular builder, and can delete it (the page then 404s
+ * exactly like any deleted page). Keeping a reserved slug is what lets the
+ * HotelPagesCard offer it as a one-tap action instead of making the owner
+ * build a page from scratch.
+ */
+export const POLICY_PAGE_SLUG = "policy";
+export const POLICY_PAGE_LABEL = "Policy";
+
+export function isPolicyPageSlug(slug: string | undefined | null): boolean {
+  return slug === POLICY_PAGE_SLUG;
+}
 
 export type HotelPage = {
   id: string;
