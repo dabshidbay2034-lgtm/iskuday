@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { GalleryCarousel } from "@/components/hotel/GalleryCarousel";
+import { amenityOption } from "@/components/hotel/amenity-icons";
 import { InlineText, type InlineTextTag } from "@/components/hotel/InlineText";
 import type { MenuItem, PageSection } from "@/components/hotel/page-sections";
 import {
@@ -533,6 +534,126 @@ export function PageSectionView({
           )}
         </section>
       );
+
+    case "amenities": {
+      const amenities = (section.amenities ?? [])
+        // An unknown key means a page saved by a newer deploy reached an older
+        // client mid-rollout. Skip that one facility rather than crash the page.
+        .map((a) => ({ item: a, option: amenityOption(a.key) }))
+        .filter((x): x is { item: typeof x.item; option: NonNullable<typeof x.option> } =>
+          Boolean(x.option),
+        );
+
+      return (
+        <section
+          className={cn(
+            "container scroll-mt-20",
+            pick(section.width, (w) => blockWidthClass(w), "max-w-5xl"),
+            pick(section.pad, (p) => padClass(p), "py-10"),
+          )}
+        >
+          <EditableText
+            mode={mode}
+            as="h2"
+            className="font-heading font-bold text-xl md:text-2xl text-foreground mb-5"
+            value={section.title ?? ""}
+            placeholder="Facilities"
+            onCommit={(v) => patch({ title: v })}
+          >
+            {section.title || "Facilities"}
+          </EditableText>
+
+          {amenities.length === 0 ? (
+            mode === "edit" ? (
+              <p className="text-sm text-muted-foreground">
+                Pick the facilities this hotel offers in the panel on the right.
+              </p>
+            ) : null
+          ) : (
+            <ul
+              className={pick(
+                section.columns,
+                roomColumnsClass,
+                "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3",
+              )}
+            >
+              {amenities.map(({ item, option }) => (
+                <li
+                  key={item.id}
+                  className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3"
+                >
+                  <option.Icon
+                    className="w-4.5 h-4.5 shrink-0"
+                    // Accent is owner data from the database, so it is inline;
+                    // a hotel that never picked one falls back to the token.
+                    style={brand.accentColor ? { color: brand.accentColor } : undefined}
+                  />
+                  <span className="text-sm text-foreground leading-snug">
+                    {item.label?.trim() || option.label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      );
+    }
+
+    case "faq": {
+      const faqs = (section.faqs ?? []).filter((f) => f.question.trim() || f.answer.trim());
+      return (
+        <section
+          className={cn(
+            "container scroll-mt-20",
+            pick(section.width, (w) => blockWidthClass(w), "max-w-3xl"),
+            pick(section.pad, (p) => padClass(p), "py-10"),
+            pick(section.align, (a) => alignClass(a), ""),
+          )}
+        >
+          <EditableText
+            mode={mode}
+            as="h2"
+            className="font-heading font-bold text-xl md:text-2xl text-foreground mb-5"
+            value={section.title ?? ""}
+            placeholder="Frequently asked questions"
+            onCommit={(v) => patch({ title: v })}
+          >
+            {section.title || "Frequently asked questions"}
+          </EditableText>
+
+          {faqs.length === 0 ? (
+            mode === "edit" ? (
+              <p className="text-sm text-muted-foreground">
+                Add the questions guests ask most — check-in time, payment, airport pickup.
+              </p>
+            ) : null
+          ) : (
+            <div className="divide-y divide-border rounded-2xl border border-border bg-card overflow-hidden">
+              {faqs.map((faq) => (
+                // Native <details>, not a JS accordion, for two reasons: the
+                // answer text stays in the DOM even while collapsed, so
+                // crawlers and Ctrl+F both find it; and it works before (and
+                // without) hydration, which matters on a slow connection.
+                <details key={faq.id} className="group">
+                  <summary className="flex items-center justify-between gap-3 px-4 py-3.5 cursor-pointer list-none text-left font-medium text-foreground text-[15px] hover:bg-muted/50 transition-colors">
+                    <span>{faq.question || "Question"}</span>
+                    <span
+                      aria-hidden="true"
+                      className="shrink-0 text-muted-foreground transition-transform group-open:rotate-45 text-lg leading-none"
+                    >
+                      +
+                    </span>
+                  </summary>
+                  <div className="px-4 pb-4 -mt-1 text-sm text-muted-foreground whitespace-pre-line">
+                    {faq.answer}
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
+        </section>
+      );
+    }
 
     case "menu": {
       const items = section.items ?? [];

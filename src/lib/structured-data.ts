@@ -762,6 +762,42 @@ export interface ItemListEntry {
  * detail page is the authority on each listing, and restating a trimmed copy here
  * only creates two versions of the truth to keep in sync.
  */
+/**
+ * FAQPage — the questions on a hotel's `faq` block.
+ *
+ * One of the few rich results Google still shows prominently, and the only one
+ * this platform can earn from content an owner types rather than from data we
+ * already hold. That is why the FAQ block exists at all.
+ *
+ * Google's policy is that the markup must match FAQs VISIBLE on the page, and
+ * that both question and answer must be there in full. The renderer uses native
+ * <details>, so a collapsed answer is still in the DOM — collapsing is a display
+ * choice, not hidden content, and this stays honest. Never emit a question here
+ * that the page does not also show.
+ *
+ * Entries missing either half are dropped rather than shipped with an empty
+ * `text`, which Google reports as invalid and which would invalidate the whole
+ * node.
+ */
+export function faqPageLd(
+  faqs: { question: string; answer: string }[],
+): object | null {
+  const usable = faqs
+    .map((f) => ({ question: f.question?.trim() ?? "", answer: f.answer?.trim() ?? "" }))
+    .filter((f) => f.question && f.answer);
+  if (usable.length === 0) return null;
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: usable.map((f) => ({
+      "@type": "Question",
+      name: f.question,
+      acceptedAnswer: { "@type": "Answer", text: f.answer },
+    })),
+  };
+}
+
 export function itemListLd(items: ItemListEntry[], listName: string): object {
   const entries = (items ?? [])
     .map((item) => ({ name: item?.name?.trim(), url: abs(item?.url) }))

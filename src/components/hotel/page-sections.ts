@@ -1,6 +1,6 @@
 import {
   AlignLeft, Image as ImageIcon, BedDouble, Columns3, Megaphone, RectangleVertical,
-  Sparkles, Phone,
+  Sparkles, Phone, ListChecks, HelpCircle,
 } from "lucide-react";
 
 import type {
@@ -151,6 +151,8 @@ export const SECTION_META: Record<
   cta: { label: "Button", Icon: Megaphone, hint: "A highlight band with a button." },
   contact: { label: "Contact", Icon: Phone, hint: "Phone, WhatsApp, map and socials." },
   policy: { label: "Policy", Icon: AlignLeft, hint: "House rules, payment & cancellation terms — an editable policy section." },
+  amenities: { label: "Facilities", Icon: ListChecks, hint: "Wi-Fi, generator, water, parking — what the hotel offers." },
+  faq: { label: "FAQ", Icon: HelpCircle, hint: "Common questions with answers. Also shown in Google results." },
   row: { label: "Columns", Icon: Columns3, hint: "Blocks side by side — stacked on phones." },
   column: { label: "Column", Icon: RectangleVertical, hint: "One column of a row. Put blocks in it." },
 };

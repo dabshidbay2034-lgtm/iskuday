@@ -7,12 +7,15 @@ import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
 import Seo from "@/components/Seo";
 import { absoluteUrl, buildTitle, META_DESCRIPTION_MAX, truncate } from "@/lib/seo";
-import { breadcrumbLd, hotelLd } from "@/lib/structured-data";
+import { breadcrumbLd, faqPageLd, hotelLd } from "@/lib/structured-data";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { brandFromHotel, PageSectionView } from "@/components/hotel/PageSectionView";
 import HotelFooter from "@/components/hotel/HotelFooter";
 import { platformHotelPagePath } from "@/lib/hotel-links";
+import {
+  HotelBookButton, HotelMobileActionBar, hasHotelContact,
+} from "@/components/hotel/HotelActionBar";
 import {
   usePublicHotelPage, useHotelRooms, type HotelRoomProperty,
 } from "@/hooks/use-hotels";
@@ -162,9 +165,17 @@ const HotelPage = () => {
   const hasContact = pageSections.some((s) => s.type === "contact");
   const brand = brandFromHotel(hotel);
 
-  // The menu only earns its space once there is somewhere to go. One page is
-  // not a site, and a nav with a single item is noise.
+  // The PAGE LIST only earns its space once there is somewhere to go. One page
+  // is not a site, and a menu with a single item is noise. The bar itself still
+  // renders — the hotel's mark and its "Book now" are worth a sticky strip on
+  // their own, whether the hotel has one page or six.
   const showMenu = menuPages.length > 1;
+
+  // Where "Book now" lands when the hotel has published no number at all: the
+  // contact block, else the rooms block, else nothing — HotelBookButton renders
+  // nothing rather than a button that goes to an anchor that isn't on the page.
+  const hasRoomsBlock = pageSections.some((s) => s.type === "rooms") && rooms.length > 0;
+  const bookFallbackHref = hasContact ? "#contact" : hasRoomsBlock ? "#rooms" : null;
   const onHome = !safePageSlug || isHomeSlug(currentPage?.slug);
   // One path builder for the top menu AND the footer, so the two can't disagree
   // about where a page lives. The subdomain passes the tenant builder instead.
@@ -223,7 +234,14 @@ const HotelPage = () => {
         // Lodging has the best-supported rich results of anything on this site,
         // and the rooms carry per-NIGHT offers — publishing a nightly rate as
         // monthly would be a 30x misstatement of price.
+        // `.filter(Boolean)` at the end: faqPageLd returns null for a page with
+        // no FAQ block (or one whose questions are still blank), and a null in
+        // this array would serialise as `null` inside the <script> and
+        // invalidate every other node in it.
         jsonLd={[
+          faqPageLd(
+            pageSections.flatMap((s) => (s.type === "faq" ? s.faqs ?? [] : [])),
+          ),
           hotelLd(
             {
               slug: hotel.slug,
@@ -257,7 +275,7 @@ const HotelPage = () => {
             { name: "Hotels", url: absoluteUrl("/properties?type=hotel") },
             { name: hotel.name, url: absoluteUrl(`/hotels/${hotel.slug}`) },
           ]),
-        ]}
+        ].filter(Boolean)}
       />
       <Header />
 
@@ -267,33 +285,73 @@ const HotelPage = () => {
           want indexed — showed only one page, so a hotel that built three had
           two of them reachable nowhere Google looks. Plain <Link>s: these are
           real URLs with real content, which is the entire point. */}
-      {showMenu && (
-        <nav
-          aria-label={`${hotel.name} pages`}
-          className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-0 z-30"
-        >
-          <div className="container max-w-5xl flex items-center gap-1 overflow-x-auto py-2">
-            {menuPages.map((page) => {
-              const href = pagePath(page);
-              const active = page.isHome ? onHome : currentPage?.slug === page.slug;
-              return (
-                <Link
-                  key={page.id}
-                  to={href}
-                  aria-current={active ? "page" : undefined}
-                  className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors ${
-                    active
-                      ? "bg-foreground text-background font-medium"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  }`}
-                >
-                  {page.title}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
-      )}
+      <nav
+        aria-label={`${hotel.name} pages`}
+        // `top-16 md:top-20` is the platform <Header/>'s own height: it is
+        // sticky at z-50, so a bar stuck at top-0 would slide underneath it and
+        // vanish the moment the visitor scrolled.
+        className="border-b border-border bg-card/60 backdrop-blur-sm sticky top-16 md:top-20 z-30"
+      >
+        <div className="container max-w-5xl flex items-center gap-3 py-2">
+          {/* The hotel's mark, always home. On their own site the logo IS the
+              home link, and visitors arriving on a sub-page from search have
+              no other way back to the main page. */}
+          <Link
+            to={`/hotels/${hotel.slug}`}
+            aria-label={`${hotel.name} home`}
+            className="flex items-center shrink-0 min-w-0 rounded-lg transition-opacity hover:opacity-80"
+          >
+            {hotel.logoUrl ? (
+              <img
+                src={hotel.logoUrl}
+                alt={hotel.name}
+                className="h-8 w-auto max-w-[140px] object-contain"
+              />
+            ) : (
+              <span
+                // Accent is owner data from the database, so it goes inline;
+                // a hotel that never picked one falls back to the token.
+                style={brand.accentColor ? { color: brand.accentColor } : undefined}
+                className="font-heading font-bold text-sm md:text-base truncate max-w-[9rem] md:max-w-[14rem] text-foreground"
+              >
+                {hotel.name}
+              </span>
+            )}
+          </Link>
+
+          {showMenu && (
+            <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto scrollbar-hide">
+              {menuPages.map((page) => {
+                const href = pagePath(page);
+                const active = page.isHome ? onHome : currentPage?.slug === page.slug;
+                return (
+                  <Link
+                    key={page.id}
+                    to={href}
+                    aria-current={active ? "page" : undefined}
+                    className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors ${
+                      active
+                        ? "bg-foreground text-background font-medium"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {page.title}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pinned right, on every page of the hotel's site: the booking is the
+              only thing this page is for. `ml-auto` so it stays pinned when
+              there is no page list to push it over. */}
+          <HotelBookButton
+            hotel={brand}
+            fallbackHref={bookFallbackHref}
+            className="ml-auto"
+          />
+        </div>
+      </nav>
 
       {/* ── Blocks, in the owner's order ─────────────────────────────────── */}
       {pageSections.map((section) => (
@@ -320,7 +378,17 @@ const HotelPage = () => {
       />
 
 
-      <BottomNav />
+      {/* ── Bottom chrome: ONE bar, never two ────────────────────────────────
+          BottomNav is `md:hidden fixed bottom-0 z-50`, and so is the hotel's
+          action bar — the same strip of a phone screen. On a hotel page the
+          HOTEL wins: this page exists to turn a visitor into a booking, and in
+          Mogadishu that booking happens on WhatsApp, so "WhatsApp / Call" is
+          worth more than "Home / Explore / Saved / Account" — which is still
+          one tap away in the sticky <Header/> above. When the hotel has no
+          reachable number there is no bar to show, so BottomNav keeps the slot
+          rather than the page losing its bottom chrome for nothing. Either way
+          the wrapper's `pb-20 md:pb-0` clears exactly one bar. */}
+      {hasHotelContact(brand) ? <HotelMobileActionBar hotel={brand} /> : <BottomNav />}
     </div>
   );
 };

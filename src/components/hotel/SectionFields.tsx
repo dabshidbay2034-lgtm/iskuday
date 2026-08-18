@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { PageSection, MenuItem } from "@/components/hotel/page-sections";
+import type { PageSection, MenuItem, AmenityItem, FaqItem } from "@/components/hotel/page-sections";
+import { AMENITY_OPTIONS, amenityOption } from "@/components/hotel/amenity-icons";
 import { uid } from "@/components/hotel/page-sections";
 import {
   ALIGN_OPTIONS, GALLERY_LAYOUT_OPTIONS, HERO_HEIGHT_OPTIONS, OVERLAY_OPTIONS,
@@ -214,6 +215,150 @@ function ContentFields({
 
     // A policy clause — a rule title plus the rule text. Same shape as a text
     // block, so the owner edits it inline the same way.
+    // Facilities. A CLOSED list of toggles, not free text — see the rationale in
+    // amenity-icons.ts. Toggling is one tap per facility, which is the whole
+    // point on a phone; the label field underneath only appears for the ones
+    // already chosen, so the panel does not open as a wall of inputs.
+    case "amenities": {
+      const chosen = section.amenities ?? [];
+      const isOn = (key: string) => chosen.some((a) => a.key === key);
+      const toggle = (key: string) => {
+        const next: AmenityItem[] = isOn(key)
+          ? chosen.filter((a) => a.key !== key)
+          // Appended, not sorted into AMENITY_OPTIONS order: the owner's own
+          // ordering is meaningful — they put the generator first because that
+          // is what sells the room here.
+          : [...chosen, { id: uid(), key }];
+        onUpdate({ amenities: next });
+      };
+      const relabel = (id: string, label: string) =>
+        onUpdate({ amenities: chosen.map((a) => (a.id === id ? { ...a, label } : a)) });
+
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Section title</Label>
+            <Input
+              value={section.title ?? ""}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder="Facilities"
+              className={inputCls}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">
+              Facilities <span className="text-muted-foreground/70">({chosen.length} selected)</span>
+            </Label>
+            <div className="flex flex-wrap gap-1.5">
+              {AMENITY_OPTIONS.map((opt) => {
+                const on = isOn(opt.key);
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => toggle(opt.key)}
+                    aria-pressed={on}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-colors",
+                      on
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-primary/40",
+                    )}
+                  >
+                    <opt.Icon className="w-3.5 h-3.5" />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {chosen.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-muted-foreground">
+                Rename <span className="text-muted-foreground/70">(optional)</span>
+              </Label>
+              <div className="space-y-1.5">
+                {chosen.map((a) => (
+                  <Input
+                    key={a.id}
+                    value={a.label ?? ""}
+                    onChange={(e) => relabel(a.id, e.target.value)}
+                    placeholder={amenityOption(a.key)?.label ?? a.key}
+                    className={inputCls}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    case "faq": {
+      const faqs = section.faqs ?? [];
+      const setFaqs = (next: FaqItem[]) => onUpdate({ faqs: next });
+      const patchFaq = (id: string, patch: Partial<FaqItem>) =>
+        setFaqs(faqs.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+
+      return (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Section title</Label>
+            <Input
+              value={section.title ?? ""}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder="Frequently asked questions"
+              className={inputCls}
+            />
+          </div>
+
+          <div className="space-y-2">
+            {faqs.map((faq, i) => (
+              <div key={faq.id} className="rounded-lg border border-border p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] text-muted-foreground">Question {i + 1}</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    onClick={() => setFaqs(faqs.filter((f) => f.id !== faq.id))}
+                    aria-label={`Remove question ${i + 1}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                <Input
+                  value={faq.question}
+                  onChange={(e) => patchFaq(faq.id, { question: e.target.value })}
+                  placeholder="What time is check-in?"
+                  className={inputCls}
+                />
+                <Textarea
+                  value={faq.answer}
+                  onChange={(e) => patchFaq(faq.id, { answer: e.target.value })}
+                  placeholder="Check-in is from 14:00. Early arrival on request."
+                  className="rounded-lg text-sm min-h-[64px]"
+                />
+              </div>
+            ))}
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full rounded-lg"
+            onClick={() => setFaqs([...faqs, { id: uid(), question: "", answer: "" }])}
+          >
+            <Plus className="w-3.5 h-3.5" /> Add question
+          </Button>
+        </>
+      );
+    }
+
     case "policy":
       return (
         <>
