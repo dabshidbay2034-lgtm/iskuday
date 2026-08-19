@@ -32,11 +32,12 @@ The alternative was a `supabase/functions/sitemap` edge function serving
 `application/xml`, with a `vercel.json` rewrite pointing `/sitemap.xml` at it.
 That would always be fresh, with no deploy lag. It was rejected because:
 
-- **This project's edge functions are not deployed.** `increment-view` and
-  `send-notification` both 404 in production today (see `docs/DEPLOY_FUNCTIONS.md`).
-  Putting the sitemap behind that same un-fired pipeline means the single file
-  that tells Google what to crawl inherits a known-broken deploy dependency.
-  A 404 at `/sitemap.xml` is worse than a sitemap that is a day stale.
+- **It would put `/sitemap.xml` behind a second deploy pipeline.** When this was
+  written the edge functions were all 404 in production, which made the argument
+  vivid; they are deployed now (re-probed 19 Aug 2026), so the premise is weaker
+  but the conclusion is unchanged. The build step has no runtime dependency at
+  all, and a 404 at `/sitemap.xml` is worse than a sitemap that is a day stale —
+  Google learns the file is unreliable, and that is expensive to undo.
 - **It costs an invocation on every crawler fetch**, including from bots we get
   no value from.
 - **A build step has no runtime failure mode.** Once the file is in `dist/` it

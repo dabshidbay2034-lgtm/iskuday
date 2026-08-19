@@ -76,7 +76,11 @@ CLI rejects them. That warning you saw is expected.
 
 ### 1c. The bug that gets worse every day it waits
 
-`clerk-webhook` has never been deployed, and the Clerk migration deliberately dropped the
+**Re-probed 19 Aug 2026: `clerk-webhook` is now deployed** (it answers `401`), so this
+stopped getting worse at whatever point it shipped. Accounts created before then are
+still missing their row and still need the backfill below.
+
+`clerk-webhook` was not deployed for a long time, and the Clerk migration deliberately dropped the
 `handle_new_user()` DB trigger. **No client code inserts into `profiles`.** So every
 account created since that migration has no profile row — their name appears nowhere,
 `Dashboard.tsx:68`'s `.single()` throws for them, and "save name" silently updates zero

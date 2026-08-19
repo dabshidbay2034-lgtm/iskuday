@@ -1,18 +1,27 @@
 # Deploying the edge functions
 
-**Status right now: none of the four functions are deployed.** Verified by probing
-production — `clerk-webhook` and `increment-view` both return `404`.
+**Status: three of the four are deployed. `sifalo-payment` is not.**
 
-That single fact is causing two live bugs and blocking a third feature:
+Re-probed 19 August 2026. A `401` is the healthy answer — the function is live and
+refusing an unsigned request. A `404` means it is not there:
 
-| Function | What breaks while it's undeployed |
-|---|---|
-| `clerk-webhook` | **Every new signup gets no `profiles` row.** The Clerk migration deliberately dropped the `handle_new_user()` DB trigger and no client code inserts into `profiles`, so nothing creates it. Their name never appears anywhere, `Dashboard.tsx:68`'s `.single()` throws for them, and "save name" silently updates 0 rows. `BOOTSTRAP_ADMIN_IDS` also never fires. |
-| `increment-view` | **View counting has never worked.** Every property page throws a CORS error on preflight, because a 404 can't answer `OPTIONS`. `properties.views` is permanently 0. |
-| `send-notification` | Booking requests and service inquiries reach nobody. **And no hotel team invitation email has ever been sent** — the trigger in `20260814000001` fires the `hotel_invite` branch of this function, so the whole path is written and has simply never run. Until it is deployed, invites work only by the copy-link and WhatsApp buttons on the team page. |
-| `sifalo-payment` | **No online payment can start.** Booking checkout and the billing page both call it; without it a guest can only choose "pay at the hotel" and an operator can only settle a subscription by phone. |
+| Function | Probe | State |
+|---|---|---|
+| `clerk-webhook` | `401` | deployed |
+| `increment-view` | `401` | deployed |
+| `send-notification` | `401` | deployed |
+| `sifalo-payment` | `404` | **not deployed** — booking checkout and the billing page both call it, so until it ships a guest can only choose "pay at the hotel" and an operator can only settle a subscription by phone |
 
-Existing accounts predate the migration, which is why this hasn't surfaced yet.
+⚠ **This section said the opposite until 19 August**, and the claim was repeated
+downstream — including into a hand-over summary that told the owner no hotel team
+invitation email had ever been sent. Re-probe before trusting a status line in a
+document; the deploy state changes without this file changing.
+
+**Deployed is not the same as configured.** `send-notification` silently no-ops and
+still returns `200` when `RESEND_API_KEY` is unset, so a live function proves nothing
+about whether mail is actually going out. That cannot be determined from outside the
+project. To settle it: send yourself an invite from `/team` and see whether the email
+arrives. If it does not, the key is missing — set it under §3 below.
 
 ---
 

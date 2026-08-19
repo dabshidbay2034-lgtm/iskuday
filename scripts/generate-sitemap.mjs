@@ -5,12 +5,14 @@
  * WHY a build step and not an edge function:
  * the listings live in Postgres, so a checked-in static sitemap is wrong the
  * moment anybody lists a property. The obvious alternative — a Supabase edge
- * function behind a Vercel rewrite — would always be fresh, but this project's
- * existing edge functions (increment-view, send-notification, clerk-webhook)
- * are not deployed and 404 in production. Putting /sitemap.xml behind that same
- * unfired deploy pipeline means Google gets a 404 for the one file that tells
- * it what to crawl. A build step has no runtime dependency, no invocation cost,
- * and re-runs on every deploy — see docs/SEO.md for the trade-off in full.
+ * function behind a Vercel rewrite — would always be fresh, but it puts the one
+ * file that tells Google what to crawl behind a SECOND deploy pipeline. When
+ * this was written that pipeline had never fired at all (every edge function
+ * 404'd in production); they are deployed now, re-probed 19 Aug 2026, so the
+ * argument is less dramatic and the conclusion is the same: a build step has no
+ * runtime dependency, no invocation cost, and re-runs on every deploy. A 404 at
+ * /sitemap.xml teaches Google the file is unreliable, which is expensive to
+ * undo — see docs/SEO.md for the trade-off in full.
  *
  * WHY it never fails the build:
  * a deploy that ships no site at all is strictly worse than a deploy whose

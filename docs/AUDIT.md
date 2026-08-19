@@ -77,7 +77,10 @@ I traced the full chain before concluding:
 - Migration `20260804000001` **deliberately dropped** the `handle_new_user()` trigger,
   commenting that the webhook owns provisioning.
 - **No client code anywhere inserts into `profiles`** — grep shows only `select` and `update`.
-- The webhook is not deployed.
+- The webhook was not deployed when this was written. **It is now** — re-probed
+  19 Aug 2026, `clerk-webhook` answers `401`. So the chain below describes
+  accounts created BEFORE it shipped; new signups should be getting their row.
+  Confirm on a fresh account before assuming either way.
 
 So every new signup gets **no `profiles` row**. Downstream: `Dashboard.tsx:68` calls
 `.single()` on profiles and throws for them; `ProfileSettings` "save name" updates 0 rows
