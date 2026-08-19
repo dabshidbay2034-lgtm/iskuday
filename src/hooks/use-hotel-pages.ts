@@ -324,10 +324,23 @@ export function useCreateHotelPage(hotelId?: string) {
           title,
           sections: input.sections ?? [],
           sort_order: input.sortOrder ?? (count ?? 0),
-          // Never true here: the home page is claimed by the migration or by
-          // useSetHomePage(), and racing the partial unique index from an
-          // "add page" button would fail with a confusing index name.
-          is_home: false,
+          // The FIRST page a hotel gets is its home page.
+          //
+          // This was hardcoded `false`, on the reasoning that home is "claimed
+          // by the migration or by useSetHomePage()". That holds only for
+          // hotels that already existed when 20260810000002 ran and got a home
+          // page back-filled. A hotel created after it never gets one — so its
+          // first page was created with is_home false, the hotel had NO home
+          // page at all, and `/hotels/:slug` fell through to the legacy
+          // `hotels.sections` scaffold. The owner's real page then existed only
+          // at its own sub-URL with nothing linking to it, because the menu
+          // needs two pages before it appears. Found live on one hotel, whose
+          // public page was showing default template copy.
+          //
+          // The partial unique index still guarantees at most one home. Two
+          // simultaneous creates both seeing count 0 is possible and the index
+          // rejects the loser — describePageError already translates that.
+          is_home: (count ?? 0) === 0,
           is_published: input.isPublished ?? false,
           // blankToNull, so an empty box is stored as NULL ("generate it")
           // rather than as an empty string that reads as a real override.

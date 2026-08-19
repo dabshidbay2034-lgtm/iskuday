@@ -174,7 +174,19 @@ const HotelPage = () => {
   // empty from the hotel's legacy scalar fields, so a hotel that never touched
   // the multi-page builder renders exactly as it did before. `hotel.sections`
   // remains the fallback for a hotel with no `hotel_pages` row at all.
-  const pageSections = currentPage ? sectionsForPage(currentPage, hotel) : hotel.sections;
+  // A hotel with published pages but NO home page still has to show one of
+  // them. That state was reachable for every hotel created after
+  // 20260810000002 (useCreateHotelPage hardcoded is_home false), and it made
+  // `/hotels/:slug` fall through to the legacy `hotels.sections` scaffold —
+  // generic template copy — while the owner's real page sat at a sub-URL that
+  // nothing linked to. The create bug is fixed; this is the net under it, and
+  // it also covers a hotel whose home page is unpublished.
+  //
+  // First by sort order, which is the order the owner arranged them in.
+  const fallbackPage = !currentPage && !safePageSlug ? menuPages[0] ?? null : null;
+  const shownPage = currentPage ?? fallbackPage;
+
+  const pageSections = shownPage ? sectionsForPage(shownPage, hotel) : hotel.sections;
   const hasContact = pageSections.some((s) => s.type === "contact");
   const brand = brandFromHotel(hotel);
 
@@ -189,7 +201,7 @@ const HotelPage = () => {
   // nothing rather than a button that goes to an anchor that isn't on the page.
   const hasRoomsBlock = pageSections.some((s) => s.type === "rooms") && rooms.length > 0;
   const bookFallbackHref = hasContact ? "#contact" : hasRoomsBlock ? "#rooms" : null;
-  const onHome = !safePageSlug || isHomeSlug(currentPage?.slug);
+  const onHome = !safePageSlug || isHomeSlug(currentPage?.slug) || Boolean(fallbackPage);
   // One path builder for the top menu AND the footer, so the two can't disagree
   // about where a page lives. The subdomain passes the tenant builder instead.
   const pagePath = platformHotelPagePath(hotel.slug);
@@ -198,11 +210,11 @@ const HotelPage = () => {
   // hotel at /hotels/:slug would collapse the whole site into one URL.
   const canonicalPath = onHome
     ? `/hotels/${hotel.slug}`
-    : `/hotels/${hotel.slug}/${currentPage?.slug ?? ""}`;
+    : `/hotels/${hotel.slug}/${shownPage?.slug ?? ""}`;
   // What this page would be called if nobody said otherwise.
   const generatedTitle = onHome
     ? `${hotel.name} — Hotel in Mogadishu`
-    : `${currentPage?.title ?? ""} — ${hotel.name}`;
+    : `${shownPage?.title ?? ""} — ${hotel.name}`;
 
   // …and the hotel's own wording when it wrote some (20260904000002). NULL —
   // which is every page nobody has edited — keeps the generated string, so no
