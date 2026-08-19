@@ -44,6 +44,16 @@ const DIST = path.join(ROOT, "dist");
 const SHELL = path.join(DIST, "index.html");
 /** Where the compiled metadata module lands. Deleted afterwards. */
 const META_OUT = path.join(ROOT, ".prerender");
+/**
+ * id -> canonical path, for generate-sitemap.mjs.
+ *
+ * The slug lives in TypeScript (src/lib/listing-url.ts) and the sitemap script
+ * is plain Node, so rather than reimplement slugify there — the exact drift
+ * this project keeps paying for — prerender writes what it already computed and
+ * the sitemap reads it. Outside dist/ on purpose: it is a build artefact, not
+ * something to serve.
+ */
+const MANIFEST = path.join(ROOT, ".prerender-manifest.json");
 
 const log = (m) => console.log(`[prerender] ${m}`);
 const warn = (m) => console.warn(`[prerender] WARNING: ${m}`);
@@ -183,6 +193,8 @@ async function main() {
 
   const env = await loadEnv();
   const routes = [];
+  /** id -> path, handed to the sitemap. */
+  const listingPaths = {};
 
   routes.push(["/", meta.homeHead()]);
   routes.push(["/properties", meta.propertiesHead()]);
@@ -233,7 +245,9 @@ async function main() {
         return listed && vacant;
       });
       for (const property of properties) {
-        routes.push([`/property/${property.id}`, meta.listingHead(property)]);
+        const routePath = meta.listingUrlPath(property);
+        listingPaths[property.id] = routePath;
+        routes.push([routePath, meta.listingHead(property)]);
       }
       log(`${properties.length} listings`);
     } else {
@@ -285,6 +299,7 @@ async function main() {
   for (const [routePath, tags] of routes) {
     await writeRoute(routePath, applyHead(shell, tags));
   }
+  await writeFile(MANIFEST, JSON.stringify({ listingPaths }, null, 2), "utf8");
   log(`wrote ${routes.length} pre-rendered pages`);
 }
 

@@ -27,6 +27,7 @@ import { ANALYTICS_EVENTS, track } from "@/lib/analytics";
 import { PERMISSIONS } from "@/lib/permissions";
 import { propertyTypeClass, propertyTypeLabel, purposeLabel, purposeClass } from "@/lib/property-display";
 import { isBookableType, isNightlyRateType } from "@/lib/property-kind";
+import { idFromListingParam, listingPath } from "@/lib/listing-url";
 import { ALL_FACETS, facetMatches } from "@/lib/facets";
 import { listingSeoDescription, listingSeoTitle, type ListingSeoInput } from "@/lib/listing-seo";
 import { useRoomBookedRanges, bookedUntil, formatBookedUntil } from "@/hooks/use-room-availability";
@@ -35,7 +36,11 @@ type LooseClient = { from: (table: string) => any };
 const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 const PropertyDetail = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id: idParam } = useParams<{ id: string }>();
+  // The route param is `<slug>-<uuid>` now, but every link shared before
+  // that existed is a bare uuid and must keep resolving forever. The uuid
+  // at the end is what identifies the listing; the slug is decoration.
+  const id = idFromListingParam(idParam);
   const navigate = useNavigate();
   const { userId: currentUserId, appRole, can } = useAppAuth();
   const isAdmin = appRole === "admin";
@@ -154,6 +159,32 @@ const PropertyDetail = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [property?.id]);
 
+  // A bare uuid (every link shared before slugs existed) or a stale slug (the
+  // owner renamed their listing) still resolves — the uuid at the end is what
+  // identifies it, the slug is decoration. Rewrite the address bar to the
+  // canonical form so the URL a visitor copies from here is the one we want
+  // indexed. `replace` so Back does not return them to the URL they just left.
+  //
+  // MUST live here, with the other hooks. It was briefly below the loading and
+  // not-found early returns, which meant it ran on the loaded render and not on
+  // the loading one — "Rendered more hooks than during the previous render",
+  // and the whole page fell into the error boundary.
+  useEffect(() => {
+    if (!property || !idParam) return;
+    const canonical = listingPath(property.id, {
+      title: property.title,
+      description: property.description,
+      type: property.type,
+      location: property.location,
+      price: property.price,
+      bedrooms: property.bedrooms,
+      toilets: property.toilets,
+      isNightly: isNightlyRateType(property.type),
+      isForSale: property.purpose === "sell",
+    });
+    if (`/property/${idParam}` !== canonical) navigate(canonical, { replace: true });
+  }, [property, idParam, navigate]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background pb-20 md:pb-0">
@@ -223,6 +254,10 @@ const PropertyDetail = () => {
   const seoTitle = buildTitle(listingSeoTitle(seoInput));
   const seoDescription = listingSeoDescription(seoInput);
 
+  // The one URL this listing should be known by. Everything — the canonical,
+  // the sitemap, the prerendered file and every internal link — points here.
+  const canonicalPath = listingPath(property.id, seoInput);
+
   // The category pages this listing belongs to. Rendered as links at the foot
   // of the page: it is how a crawler reaches a facet page (none are in the nav)
   // and how a visitor who wants "more like this" gets there.
@@ -283,7 +318,7 @@ const PropertyDetail = () => {
       <Seo
         title={seoTitle}
         description={seoDescription}
-        canonical={absoluteUrl(`/property/${property.id}`)}
+        canonical={absoluteUrl(canonicalPath)}
         image={imageUrls[0]}
         type="product"
         // RealEstateListing + Offer is what lets Google match this page to

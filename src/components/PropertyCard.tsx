@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import type { Property } from "@/lib/types";
 import { propertyTypeClass, propertyTypeLabel, purposeLabel, purposeClass } from "@/lib/property-display";
 import { formatBookedUntil } from "@/hooks/use-room-availability";
+import { listingPath } from "@/lib/listing-url";
+import { isNightlyRateType } from "@/lib/property-kind";
 
 interface PropertyCardProps {
   property: Property;
@@ -45,9 +47,22 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
     }
   };
 
+  // Keyword-bearing URL, derived from the same spec phrase the <title> uses so
+  // the link and the search result agree. See src/lib/listing-url.ts.
+  const href = listingPath(property.id, {
+    title: property.title,
+    type: property.type,
+    location: property.location,
+    price: property.price,
+    bedrooms: property.bedrooms,
+    toilets: property.toilets,
+    isNightly: isNightlyRateType(property.type),
+    isForSale: property.purpose === "sell",
+  });
+
   return (
     <div
-      onClick={() => { onClick?.(); navigate(`/property/${property.id}`); }}
+      onClick={() => { onClick?.(); navigate(href); }}
       className="group cursor-pointer"
     >
       {/* Image */}
@@ -121,7 +136,7 @@ const PropertyCard = ({ property, onClick, isFavorite, onToggleFavorite, isAuthe
             firing a second, identical navigation on top of the link's. */}
         <h3 className="font-heading font-bold text-foreground text-[15px] leading-snug truncate">
           <Link
-            to={`/property/${property.id}`}
+            to={href}
             onClick={(e) => e.stopPropagation()}
             className="hover:underline focus-visible:underline outline-none"
           >

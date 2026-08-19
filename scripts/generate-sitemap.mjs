@@ -203,6 +203,17 @@ const STATIC_PAGES = [
  * "Property not found" — worse than omitting them, because Google learns the
  * sitemap lies.
  */
+/** id -> path, written by scripts/prerender.mjs. Absent on a partial build. */
+async function readListingPaths() {
+  try {
+    const raw = await readFile(path.join(ROOT, ".prerender-manifest.json"), "utf8");
+    return JSON.parse(raw)?.listingPaths ?? {};
+  } catch {
+    warn("no prerender manifest — listing URLs fall back to bare ids");
+    return {};
+  }
+}
+
 async function propertyEntries(env) {
   const rows = await selectAll(env, "properties", {
     // type/location/bedrooms are here for the facet counts below, not for the
@@ -223,8 +234,16 @@ async function propertyEntries(env) {
     return isListed && isVacant;
   });
 
+  // The canonical path carries a keyword slug now (src/lib/listing-url.ts).
+  // That lives in TypeScript and this script is plain Node, so rather than
+  // reimplement slugify here and let the two drift, prerender writes what it
+  // already computed. Missing manifest = fall back to the bare uuid, which
+  // still resolves — a sitemap listing the pre-slug URL is worse than one
+  // listing the slug, but far better than no sitemap.
+  const listingPaths = await readListingPaths();
+
   const entries = visible.map((p) => ({
-    loc: urlFor("property", p.id),
+    loc: listingPaths[p.id] ? `${SITE}${listingPaths[p.id]}` : urlFor("property", p.id),
     lastmod: lastmodOf(p.updated_at, p.created_at),
     // Price and availability move; the listing itself does not churn hourly.
     changefreq: "weekly",

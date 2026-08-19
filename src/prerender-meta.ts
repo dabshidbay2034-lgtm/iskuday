@@ -1,5 +1,6 @@
 import { ALL_FACETS, FACET_MIN_LISTINGS, facetMatches } from "@/lib/facets";
 import { listingSeoDescription, listingSeoTitle, type ListingSeoInput } from "@/lib/listing-seo";
+import { listingPath } from "@/lib/listing-url";
 import { isNightlyRateType } from "@/lib/property-kind";
 import { DEFAULT_OG_IMAGE, absoluteUrl, buildTitle, serializeJsonLd, truncate } from "@/lib/seo";
 import {
@@ -138,7 +139,7 @@ export function facetHead(slug: string, properties: PrerenderProperty[]): HeadTa
         { name: facet.heading, url: `/properties/${facet.slug}` },
       ]),
       itemListLd(
-        members.map((p) => ({ url: absoluteUrl(`/property/${p.id}`), name: p.title })),
+        members.map((p) => ({ url: absoluteUrl(listingUrlPath(p)), name: p.title })),
         facet.heading,
       ),
     ]),
@@ -151,9 +152,10 @@ export function allFacetSlugs(): string[] {
 }
 
 /** `/property/:id` */
-export function listingHead(property: PrerenderProperty): HeadTags {
+/** The SEO input for one listing. Shared by the head and the URL. */
+export function listingSeoInput(property: PrerenderProperty): ListingSeoInput {
   const isNightly = isNightlyRateType(property.type ?? undefined);
-  const input: ListingSeoInput = {
+  return {
     title: property.title,
     description: property.description,
     type: property.type,
@@ -166,11 +168,20 @@ export function listingHead(property: PrerenderProperty): HeadTags {
     isNightly,
     isForSale: property.purpose === "sell",
   };
+}
+
+/** The canonical path for one listing. */
+export function listingUrlPath(property: PrerenderProperty): string {
+  return listingPath(property.id, listingSeoInput(property));
+}
+
+export function listingHead(property: PrerenderProperty): HeadTags {
+  const input = listingSeoInput(property);
 
   return head({
     title: buildTitle(listingSeoTitle(input)),
     description: listingSeoDescription(input),
-    canonical: absoluteUrl(`/property/${property.id}`),
+    canonical: absoluteUrl(listingUrlPath(property)),
     image: property.images?.[0] ? absoluteUrl(property.images[0]) : DEFAULT_OG_IMAGE,
     jsonLd: serializeJsonLd([
       propertyListingLd({
@@ -188,7 +199,7 @@ export function listingHead(property: PrerenderProperty): HeadTags {
       breadcrumbLd([
         { name: "Home", url: "/" },
         { name: "Properties", url: "/properties" },
-        { name: property.title, url: `/property/${property.id}` },
+        { name: property.title, url: listingUrlPath(property) },
       ]),
     ]),
   });
