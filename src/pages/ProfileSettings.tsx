@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { setPlatformRole } from "@/lib/user-role";
+import { describeRoleError, setPlatformRole } from "@/lib/user-role";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import Header from "@/components/Header";
@@ -136,16 +136,16 @@ const ProfileSettings = () => {
     if (!userId) return;
     setUpgradingRole(true);
 
-    // Same helper CompleteProfile uses. It addresses the row by primary key,
-    // so it never rewrites every row for a user (which collapsed two rows onto
-    // one value and failed with 23505), and it names no unique constraint, so
-    // it survives 20260805000003 flipping user_roles from UNIQUE(user_id, role)
-    // to UNIQUE(user_id).
-    const { error } = await setPlatformRole(userId, newRole, true);
+    // Same door CompleteProfile uses — set_my_role() (20260908000001). The
+    // database refuses this outright once the account is already a business
+    // type or once a plan has started, and returns a sentence written for the
+    // person reading it, so that is what gets shown rather than a Postgres
+    // error string.
+    const { error } = await setPlatformRole(newRole);
 
     if (error) {
-      console.error("Failed to upgrade role", error);
-      toast.error(`Failed to upgrade role: ${error.message}`);
+      console.error("Failed to change account type", error);
+      toast.error(describeRoleError(error) ?? "Couldn't change your account type.");
     } else {
       setCurrentRole(newRole);
       // useAppAuth caches the role lookup for 5 minutes; without this the rest
@@ -158,11 +158,18 @@ const ProfileSettings = () => {
 
   const initials = fullName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
   const role = roleInfo[currentRole] || roleInfo.user;
-  // Admin/semi_admin are platform roles, not a business type — nothing to
-  // switch between. Everyone else (including someone who already picked a
-  // type) can move to a DIFFERENT one; they just can't re-pick the one they're
-  // already on.
-  const canUpgrade = ["user", "owner", "agent", "hotel_manager"].includes(currentRole);
+  // ONLY a renter may choose. This mirrors set_my_role() (20260908000001)
+  // exactly, and the database is the one that enforces it.
+  //
+  // It used to offer the switch to everyone who already had a business type,
+  // which is what let somebody take the 14-day PMS trial as an owner, let it
+  // lapse, become a hotel_manager and take the hotel trial as well. An account
+  // type is now picked once; support changes it after that, with a record of
+  // who asked and why.
+  //
+  // Admin and semi_admin are platform roles rather than business types, and
+  // were already excluded — they have nothing to switch between.
+  const canUpgrade = currentRole === "user";
   const upgradeOptions = ROLE_TARGETS.filter((opt) => opt.value !== currentRole);
 
   return (

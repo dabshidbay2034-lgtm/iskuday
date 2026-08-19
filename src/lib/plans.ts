@@ -84,6 +84,31 @@ export const PLANS: Plan[] = [
   },
 ];
 
+/**
+ * Which plans satisfy a requirement for `plan`.
+ *
+ * The hotel plan is sold as "Hotel Management + PMS" and its feature list
+ * promises the rent ledger, utilities, maintenance, leases and tenant records —
+ * the PMS product, included. So a hotel subscriber asked for `pms` is entitled.
+ *
+ * This existed only in the marketing copy. `useMySubscription` matched the plan
+ * exactly, so a hotel manager paying $99.99 was refused at every
+ * `BillingGate plan="pms"` — which is the whole of `/manage/property/:id`. They
+ * were sold the PMS tools and locked out of them.
+ *
+ * Not symmetric, deliberately: PMS does not include hotel operations, which is
+ * the difference the higher price buys.
+ */
+export const PLAN_COVERAGE: Record<PlanId, PlanId[]> = {
+  hotel: ["hotel"],
+  pms: ["pms", "hotel"],
+};
+
+/** Every plan whose subscription would satisfy a gate asking for `plan`. */
+export function plansCovering(plan: PlanId): PlanId[] {
+  return PLAN_COVERAGE[plan] ?? [plan];
+}
+
 /** Indexed lookup. Built from PLANS so the two can never disagree. */
 const PLAN_BY_ID: Record<PlanId, Plan> = PLANS.reduce(
   (acc, plan) => {

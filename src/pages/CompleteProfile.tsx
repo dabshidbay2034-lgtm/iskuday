@@ -70,16 +70,17 @@ const CompleteProfile = () => {
 
     // 2. Ensure user_roles reflects the chosen role.
     //
-    // Deliberately not an upsert: onConflict has to name a unique constraint,
-    // and which one exists depends on whether 20260805000003 has run. Naming
-    // the wrong one fails signup outright with "no unique or exclusion
-    // constraint matching the ON CONFLICT specification". setPlatformRole()
-    // reads first and is correct under both schemas — see src/lib/user-role.ts.
-    const { error: roleError } = await setPlatformRole(
-      user.id,
-      role,
-      role === "user" || role === "agent", // Auto-verify renters and agents
-    );
+    // Goes through set_my_role() (20260908000001). The client cannot write
+    // user_roles at all any more: the policies that allowed it constrained the
+    // row but not the `role` column, so any signed-in user could make
+    // themselves 'admin'. The rules — business roles only, renter-or-none
+    // only, refused once a plan has started — now live in the database.
+    //
+    // A renter picking "just browsing" writes no role at all: 'user' is the
+    // absence of a business account, set_my_role() does not accept it, and
+    // useAppAuth already treats a missing row as a renter.
+    const { error: roleError } =
+      role === "user" ? { error: null } : await setPlatformRole(role);
 
     // NOTE: do not try to write the role into Clerk's publicMetadata here.
     // publicMetadata is read-only from the frontend — user.update() rejects it

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError, pmsDb, useErrorToast } from "@/hooks/use-rent";
-import { TRIAL_DAYS, planById, trialDaysRemaining, type PlanId } from "@/lib/plans";
+import { TRIAL_DAYS, planById, trialDaysRemaining, type PlanId, plansCovering } from "@/lib/plans";
 import { looseFrom } from "@/lib/supabase-loose";
 
 /**
@@ -417,9 +417,50 @@ export type Entitlement = {
  * every single navigation. BillingGate renders children while pending for
  * exactly this reason.
  */
+/**
+ * The subscription that entitles this subject to `plan`, if any.
+ *
+ * Looks at every plan that COVERS the requested one and returns the best of
+ * them: an entitling row always beats a lapsed one, so a hotel manager whose
+ * hotel plan is active passes a `pms` gate even if some historical `pms` row
+ * sits expired beside it.
+ */
+function useEntitlingSubscription(plan: PlanId) {
+  const subject = useSubscriptionSubject();
+  const covering = plansCovering(plan);
+
+  const query = useQuery({
+    queryKey: [...subscriptionKey(subject.key, plan), "covering"] as const,
+    enabled: subject.ready,
+    queryFn: async (): Promise<Subscription | null> => {
+      const { data, error } = await looseFrom("subscriptions")
+        .select("*")
+        .eq("subject_type", subject.subjectType)
+        .eq("subject_id", subject.subjectId)
+        .in("plan", covering);
+      if (error) throw error;
+
+      const rows = ((data as RawSubscription[]) ?? []).map(toSubscription);
+      if (rows.length === 0) return null;
+
+      // An entitling row wins. Among equals the order is whatever the database
+      // returned, which is fine: two entitling subscriptions both grant access.
+      return rows.find((r) => isEntitledState(effectiveSubscriptionState(r))) ?? rows[0];
+    },
+  });
+
+  useErrorToast(query.error, "Couldn't load your subscription");
+  return query;
+}
+
 export function useEntitlement(plan: PlanId): Entitlement {
   const subject = useSubscriptionSubject();
-  const query = useMySubscription(plan);
+  // Not useMySubscription(plan): that matches the plan exactly, which is right
+  // for the billing page's history but wrong for a gate. The hotel plan
+  // INCLUDES the PMS product — see PLAN_COVERAGE in src/lib/plans.ts — so a
+  // hotel subscriber must pass a `pms` gate. They were being refused at every
+  // /manage/property/:id despite paying for a plan that advertises it.
+  const query = useEntitlingSubscription(plan);
 
   const subscription = query.data ?? null;
 

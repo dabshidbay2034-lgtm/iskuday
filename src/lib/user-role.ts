@@ -3,67 +3,60 @@ import type { UserRole } from '@/lib/types';
 import type { PostgrestError } from '@supabase/supabase-js';
 
 /**
- * Set a user's platform role without depending on which unique constraint
- * `public.user_roles` currently carries.
+ * Choose this account's type.
  *
- * Why this exists instead of a one-line upsert:
+ * ── WHY THIS IS AN RPC AND NOT A WRITE ──────────────────────────────────────
+ * It used to read `user_roles` and then INSERT or UPDATE the row from the
+ * browser, which worked because the table's RLS let a signed-in user write
+ * their own row. Those policies checked WHICH ROW you could write and nothing
+ * about the `role` column — and `app_role` contains 'admin'. Any registered
+ * user could set themselves to platform administrator from the console, using
+ * the anon client that ships in this bundle. Everything gated on
+ * `has_role(..., 'admin')` went with it: every guest's phone number, every
+ * subscription, every payment record.
  *
- * The table shipped with `UNIQUE (user_id, role)` — several roles per user.
- * Migration 20260805000003 replaces that with `UNIQUE (user_id)` — one role per
- * user. Both are reasonable; the problem is that an `upsert(..., { onConflict })`
- * has to name one of them, and naming the wrong one fails hard with
+ * 20260908000001 removed those policies, so this path no longer exists. The
+ * rules now live in `set_my_role()` where a client cannot reach them:
  *
- *     there is no unique or exclusion constraint matching the ON CONFLICT
- *     specification
+ *   - only the three business roles, never 'admin' or 'semi_admin'
+ *   - only from renter, or from having no role yet
+ *   - refused once any subscription exists, trialing or otherwise
  *
- * That left two call sites disagreeing: CompleteProfile named "user_id" (valid
- * only after the migration) and ProfileSettings named "user_id,role" (valid only
- * before it). Whichever migration state the database was in, one of them was
- * broken — and since these run during signup, being broken meant a user could
- * not finish creating their account.
+ * The last two are what the product asks for: you pick once, and taking the
+ * trial is the commitment. Enforced in the database because a rule enforced in
+ * a component is a rule that holds until somebody opens devtools.
  *
- * Read-then-write costs one extra round trip on a page that runs once, and is
- * correct under both schemas.
+ * `is_verified` is gone from this signature on purpose. It used to be passed
+ * as `true` from the settings page, which made the verified badge something a
+ * user awarded themselves. It is granted by an admin now, and by nothing else.
  */
 export async function setPlatformRole(
-  userId: string,
   role: UserRole,
-  isVerified: boolean,
 ): Promise<{ error: PostgrestError | null }> {
-  const { data: existing, error: readError } = await supabase
-    .from('user_roles')
-    .select('id, role')
-    .eq('user_id', userId);
-
-  if (readError) return { error: readError };
-
-  // No row yet — the Clerk webhook may not have provisioned one, or this is a
-  // database that predates it.
-  if (!existing || existing.length === 0) {
-    const { error } = await supabase
-      .from('user_roles')
-      .insert({ user_id: userId, role, is_verified: isVerified });
-    return { error };
-  }
-
-  // Already holds the target role: only the verification flag can be stale.
-  const alreadyHas = existing.find((r) => r.role === role);
-  if (alreadyHas) {
-    const { error } = await supabase
-      .from('user_roles')
-      .update({ is_verified: isVerified })
-      .eq('id', alreadyHas.id);
-    return { error };
-  }
-
-  // Move an existing row onto the new role, addressed by primary key so exactly
-  // one row changes. Updating by user_id would rewrite every row the user has,
-  // which under the composite constraint collapses two rows onto the same value
-  // and fails with a 23505 duplicate key violation.
-  const { error } = await supabase
-    .from('user_roles')
-    .update({ role, is_verified: isVerified })
-    .eq('id', existing[0].id);
+  const { error } = await (supabase as unknown as {
+    rpc: (fn: string, args: Record<string, unknown>) => Promise<{ error: PostgrestError | null }>;
+  }).rpc('set_my_role', { _role: role });
 
   return { error };
+}
+
+/**
+ * Turn the database's refusal into something a person can act on.
+ *
+ * `set_my_role` raises with `check_violation` and a sentence already written
+ * for the reader, so the message is passed through when it is one of ours. The
+ * generic fallbacks are for the cases where Postgres speaks first — a lost
+ * connection, a policy denial from somewhere else.
+ */
+export function describeRoleError(error: PostgrestError | null): string | null {
+  if (!error) return null;
+  const message = error.message ?? '';
+
+  // Ours: already set up, plan already started, bad role value.
+  if (/already set up|already started|Choose one of/i.test(message)) return message;
+
+  if (/permission denied|row-level security|42501/i.test(message)) {
+    return 'You are not signed in, or your session expired. Sign in and try again.';
+  }
+  return 'Could not change your account type. Try again in a moment.';
 }
