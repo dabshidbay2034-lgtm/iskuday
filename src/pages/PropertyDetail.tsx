@@ -95,7 +95,13 @@ const PropertyDetail = () => {
         // to every anonymous visitor. See src/test/privacy-guards.test.ts.
         .select("full_name, avatar_url")
         .eq("user_id", property!.owner_id)
-        .single();
+        // maybeSingle, not single: `single()` returns 406 when there are ZERO
+        // rows, and an owner with no profile row is normal — a landlord who
+        // signed up through Clerk and never opened Settings has one. That 406
+        // fired on every view of their listings and threw the query into an
+        // error state, so the "Listed by" card rendered nothing at all rather
+        // than degrading to the name the listing already knows.
+        .maybeSingle();
       if (error) throw error;
       return data;
     },

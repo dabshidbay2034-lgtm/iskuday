@@ -189,19 +189,33 @@ export function useRoomPaymentTerms(roomId?: string) {
       const { data, error } = await (supabase as unknown as {
         from: (t: string) => {
           select: (c: string) => {
-            eq: (col: string, v: string) => { maybeSingle: () => Promise<{ data: unknown; error: unknown }> };
+            eq: (col: string, v: string) => {
+              limit: (n: number) => Promise<{ data: unknown; error: unknown }>;
+            };
           };
         };
       })
         .from("hotel_rooms")
-        .select("hotels!hotel_id(payment_options, deposit_percent)")
+        // `*` rather than naming the two columns: PostgREST 400s on a column
+        // that does not exist, so naming them makes every property page log an
+        // error until 20260905000001 is applied. Selecting the row and reading
+        // the fields if present works identically before and after.
+        .select("hotels!hotel_id(*)")
         .eq("property_id", roomId)
-        .maybeSingle();
+        // NOT maybeSingle(). A property can carry more than one `hotel_rooms`
+        // row — the live data already has one attached to two hotels — and
+        // maybeSingle 406s on that, which would silently drop the terms for
+        // exactly the rooms most likely to be sold. The first link wins;
+        // deciding WHICH hotel owns a shared room is a data question, not one
+        // the booking form should answer.
+        .limit(1);
 
       if (!alive || error) return;
 
-      const hotel = (data as { hotels?: { payment_options?: string[]; deposit_percent?: number } } | null)
-        ?.hotels;
+      const rows = (data as { hotels?: Record<string, unknown> }[] | null) ?? [];
+      const hotel = rows[0]?.hotels as
+        | { payment_options?: string[]; deposit_percent?: number }
+        | undefined;
       if (!hotel) return;
 
       setTerms({
