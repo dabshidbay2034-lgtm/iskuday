@@ -280,11 +280,34 @@ the verified Clerk JWT, never from `req.headers.host`.
 
 - **Canonicals.** `index.html` hardcodes `<link rel="canonical" href="https://mogadishurents.com/">`.
   On a tenant host that is actively harmful — it tells Google that every page of
-  the hotel's site is really our home page. Whatever renders tenant pages must
-  overwrite the canonical (and `og:url`) to the tenant origin, e.g.
-  `https://jazeera.mogadishurents.com/rooms`. The apex copy of the same page
-  (`/hotels/jazeera`) should then canonicalise **to the subdomain**, so the two
-  URLs do not compete.
+  the hotel's site is really our home page.
+
+  **Both hosts canonicalise to the APEX.** `src/pages/HotelPage.tsx` builds its
+  canonical with `absoluteUrl()`, which always prefixes `SITE_URL`, so a page
+  served from `jazeera.mogadishurents.com` still declares
+  `https://mogadishurents.com/hotels/jazeera` as the real URL. **That is
+  correct. Do not "fix" it.**
+
+  An earlier version of this section said the opposite — that the apex copy
+  should canonicalise *to the subdomain* — and it was wrong. Consolidating on
+  the apex is the whole strategy:
+
+  - Google treats a subdomain as a separate site. It inherits none of the
+    apex's authority, and a new tenant subdomain starts from zero. Splitting
+    the platform's authority across thirty hotel subdomains gives you thirty
+    sites with nothing, permanently, because none of them will ever earn links
+    independently.
+  - The category pages (`/properties/hotel-rooms-in-mogadishu`) rank by
+    aggregating. If hotel pages lived on subdomains, those pages would be
+    linking *off-site*, and they would stop being an authority hub.
+  - `robots.txt` and `sitemap.xml` are apex-only and served byte-identically on
+    every subdomain (see below), so no tenant URL appears in any sitemap.
+
+  The subdomain remains valuable as the hotel's own branded address — business
+  cards, WhatsApp, an Instagram bio — and it serves the same content. It is a
+  presentation surface, not an indexing surface.
+
+  If you change this, you will de-index every hotel page on the platform.
 - **`robots.txt` and `sitemap.xml` are apex-only.** `public/robots.txt` is served
   byte-identically on every subdomain, including its
   `Sitemap: https://mogadishurents.com/sitemap.xml` line and its `Disallow`
@@ -295,8 +318,10 @@ the verified Clerk JWT, never from `req.headers.host`.
   `Host` header and emits that hotel's published pages); that is a separate piece
   of work, not part of this change.
 - **Subdomains are separate sites to Google.** A hotel's subdomain does not
-  inherit the apex's authority, and vice versa. That is the correct trade for
-  "it's their website", but set expectations: a new tenant site starts from zero.
+  inherit the apex's authority, and vice versa. This is exactly why the
+  canonical points at the apex and not the other way round — see above. The
+  subdomain is where the hotel's brand lives; the apex is where its ranking
+  lives, and those do not have to be the same URL.
 
 ---
 

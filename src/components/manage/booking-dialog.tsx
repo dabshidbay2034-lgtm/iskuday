@@ -104,6 +104,18 @@ export function BookingDialog({
   const datesError =
     checkOut && checkIn && nights <= 0 ? "Check-out must be after check-in." : null;
 
+  // Mirrors the bookings_contact_required constraint (20260905000002). Enforced
+  // here too so a receptionist gets a sentence instead of a Postgres check
+  // violation — the database is the authority, this is the manners.
+  //
+  // Walk-in is exempt on purpose: a guest at the counter with cash may have no
+  // number worth recording and does not need one, they are already here. Every
+  // other source describes a guest who is somewhere else.
+  const contactError =
+    source !== "walk_in" && !guestPhone.trim() && !guestEmail.trim()
+      ? "Add a phone or an email — only walk-ins can be booked without one."
+      : null;
+
   // Live availability check. Runs whenever the dates (or the booking being
   // edited) change, and ignores stale responses via the `alive` flag.
   useEffect(() => {
@@ -136,7 +148,7 @@ export function BookingDialog({
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (nameError || datesError) return;
+    if (nameError || datesError || contactError) return;
     if (availability.state === "clash") return;
 
     save.mutate(
@@ -216,6 +228,10 @@ export function BookingDialog({
               />
             </div>
           </div>
+
+          {contactError && (
+            <p className="text-xs text-destructive -mt-1">{contactError}</p>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
@@ -369,6 +385,7 @@ export function BookingDialog({
                 save.isPending ||
                 !!nameError ||
                 !!datesError ||
+                !!contactError ||
                 availability.state === "clash" ||
                 availability.state === "checking"
               }
