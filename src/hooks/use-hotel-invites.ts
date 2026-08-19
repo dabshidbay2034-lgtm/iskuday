@@ -6,6 +6,7 @@ import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError } from "@/hooks/use-rent";
 import { HOTEL_ROLES, hotelMembersKey, type HotelRole } from "@/hooks/use-hotel-members";
 import { myHotelsKey } from "@/hooks/use-hotels";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * Hotel invitations by EMAIL — the missing half of `hotel_members`.
@@ -88,10 +89,6 @@ function toInvite(row: RawHotelInvite): HotelInvite {
     token: row.token ?? null,
   };
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 const looseRpc = (fn: string, args?: Record<string, unknown>) =>
   (supabase as unknown as {

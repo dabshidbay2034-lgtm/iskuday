@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError, useErrorToast } from "@/hooks/use-rent";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * Hotel STAFF management + payroll data layer (migration 20260810000001).
@@ -235,10 +236,6 @@ function toPayment(row: RawPayment): PayrollItem {
     staff: row.staff ? toBrief(row.staff) : null,
   };
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 const looseRpc = (fn: string, args?: Record<string, unknown>) =>
   (supabase as unknown as {

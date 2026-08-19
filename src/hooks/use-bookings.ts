@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
+import { looseFrom } from "@/lib/supabase-loose";
 import {
   describeWriteError,
   formatMoney,
@@ -206,10 +207,7 @@ export function addDaysLocal(date: string, days: number): string {
 
 // ── Loose accessor (bookings table is post-generated-types) ─────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-export const looseFromBookings = (table: string) =>
-  (supabase as unknown as LooseClient).from(table);
+export const looseFromBookings = (table: string) => looseFrom(table);
 
 // ── Keys ─────────────────────────────────────────────────────────────────────
 

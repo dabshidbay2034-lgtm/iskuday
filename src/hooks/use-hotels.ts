@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError } from "@/hooks/use-rent";
+import { looseFrom } from "@/lib/supabase-loose";
 import {
   defaultPageSections, deriveScalars, sectionsFor, type PageSection,
 } from "@/components/hotel/page-sections";
@@ -139,10 +140,6 @@ function toHotel(row: RawHotel): Hotel {
     updatedAt: row.updated_at ?? null,
   };
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 /**
  * True when the write was rejected only because `hotels.district` isn't there

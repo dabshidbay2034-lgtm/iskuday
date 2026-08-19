@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError, pmsDb, useErrorToast } from "@/hooks/use-rent";
 import { TRIAL_DAYS, planById, trialDaysRemaining, type PlanId } from "@/lib/plans";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * Subscription + trial data layer (migration 20260816000001).
@@ -36,10 +37,6 @@ import { TRIAL_DAYS, planById, trialDaysRemaining, type PlanId } from "@/lib/pla
 // generated types (they only appear once `supabase gen types` runs against a
 // database with 20260816000001 applied), so this module goes through loose
 // accessors and narrows every row itself — same pattern as use-staff-documents.
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (pmsDb as unknown as LooseClient).from(table);
 
 const looseRpc = (fn: string, args?: Record<string, unknown>) =>
   (pmsDb as unknown as {

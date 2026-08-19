@@ -11,6 +11,7 @@ import {
 } from "@/components/hotel/HotelActionBar";
 import { PLATFORM_ROOT_DOMAIN, platformUrl } from "@/lib/tenant";
 import { POLICY_PAGE_SLUG } from "@/hooks/use-hotel-pages";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * The chrome a hotel gets on ITS OWN subdomain (`jazeera.mogadishurents.com`).
@@ -57,13 +58,6 @@ export type TenantNavPage = {
   title: string;
   sortOrder: number;
 };
-
-// `hotels.subdomain` and `hotel_pages` post-date the generated Supabase types,
-// so reads go through the same loose accessor the rest of the hotel data layer
-// uses (see use-hotels.ts).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 type RawTenantHotel = {
   id: string;

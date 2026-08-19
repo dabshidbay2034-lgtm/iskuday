@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { useAppAuth } from "@/hooks/use-auth";
+import { looseFrom } from "@/lib/supabase-loose";
 import {
   describeWriteError,
   formatMoney,
@@ -31,10 +32,6 @@ import {
 // runs against a database that has the 20260806000001 migration applied, so this
 // module reads/writes it through a loose accessor and narrows rows with its own
 // mapper. The rest of the manage surface lives on the typed client.
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (pmsDb as unknown as LooseClient).from(table);
 
 // ── Domain types ─────────────────────────────────────────────────────────────
 

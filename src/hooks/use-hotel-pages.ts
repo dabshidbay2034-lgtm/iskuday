@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { describeWriteError } from "@/hooks/use-rent";
 import { isHomeSlug } from "@/lib/hotel-links";
+import { looseFrom } from "@/lib/supabase-loose";
 import {
   defaultPageSections, policyPageSections, sectionsFor, sectionsFromJson,
   type PageSection,
@@ -135,10 +136,6 @@ function toHotelPage(row: RawHotelPage): HotelPage {
     updatedAt: row.updated_at ?? null,
   };
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 // ── Slugs ────────────────────────────────────────────────────────────────────
 

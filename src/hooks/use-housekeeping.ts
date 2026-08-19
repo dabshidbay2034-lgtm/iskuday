@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError } from "@/hooks/use-rent";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * Housekeeping task data layer (migration 20260807000001).
@@ -78,10 +79,7 @@ export const TASK_STATUS_META: Record<
   skipped: { label: "Skipped", tone: "warning" },
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFromHousekeeping = (table: string) =>
-  (supabase as unknown as LooseClient).from(table);
+const looseFromHousekeeping = (table: string) => looseFrom(table);
 
 export const housekeepingKey = (roomIds?: readonly string[]) =>
   ["housekeeping", roomIds?.join(",") ?? "all"] as const;

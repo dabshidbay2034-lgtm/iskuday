@@ -31,6 +31,7 @@ import { breadcrumbLd, itemListLd } from "@/lib/structured-data";
 import NotFound from "@/pages/NotFound";
 import type { Property, PropertyType } from "@/lib/types";
 import { useRoomBookedRanges, bookedUntil } from "@/hooks/use-room-availability";
+import { looseFrom } from "@/lib/supabase-loose";
 
 interface RawPropertyRecord {
   id: string;
@@ -62,13 +63,6 @@ interface RawPropertyRecord {
   has_room_service?: boolean;
   property_images?: Array<{ image_url: string; sort_order?: number }>;
 }
-
-// Hotel tables are added by migration 20260808000001, but the generated
-// Supabase client in this repo does not include them yet. Use the same loose
-// client pattern as the hotel page hook to avoid a type mismatch on a row that
-// is valid at runtime but absent from the current generated definitions.
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 const typeFilters = [
   { value: "", label: "All", icon: SlidersHorizontal },

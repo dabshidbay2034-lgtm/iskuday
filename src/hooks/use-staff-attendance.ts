@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError } from "@/hooks/use-rent";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * Staff attendance data layer (migration 20260831000001).
@@ -89,10 +90,6 @@ function toAttendanceWithStaff(row: RawAttendanceJoin): AttendanceWithStaff {
 }
 
 // ── Loose accessor ───────────────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 // ── Keys ─────────────────────────────────────────────────────────────────────
 

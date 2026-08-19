@@ -1,4 +1,4 @@
-﻿import { Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import Header from "@/components/Header";
 import BottomNav from "@/components/BottomNav";
 import { Clock, Loader2, Lock, ShieldCheck } from "lucide-react";
@@ -13,7 +13,7 @@ import { PLANS, TRIAL_DAYS, formatPlanPrice, planById, type PlanId } from "@/lib
 /**
  * Paywall wrapper for a paid surface (migration 20260816000001).
  *
- * âš  NOT MOUNTED ANYWHERE YET, ON PURPOSE. Where the paywall lands is the
+ * âš  NOT MOUNTED ANYWHERE YET, ON PURPOSE. Where the paywall lands is the
  * owner's call: gate the wrong surface and a landlord is locked out of their
  * own rent records. See the report accompanying this work for the candidate
  * mount points. Do not wire this into a route on a hunch.
@@ -55,7 +55,7 @@ type BillingGateProps = {
 export function BillingGate({ plan, children }: BillingGateProps) {
   const { isPending, isEntitled, isTrialing, state, daysLeftInTrial } = useEntitlement(plan);
 
-  // Unknown â‰  unentitled. Never a paywall on a pending query.
+  // Unknown â‰  unentitled. Never a paywall on a pending query.
   if (isPending) return <>{children}</>;
 
   if (isTrialing) {

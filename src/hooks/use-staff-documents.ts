@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError, pmsDb, useErrorToast } from "@/hooks/use-rent";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * Staff document vault (migration 20260815000001).
@@ -24,10 +25,6 @@ import { describeWriteError, pmsDb, useErrorToast } from "@/hooks/use-rent";
 // `supabase gen types` runs against a database with 20260815000001 applied), so
 // this module reads/writes through a loose accessor and narrows rows itself.
 // Storage stays on the typed client — buckets don't need schema regeneration.
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (pmsDb as unknown as LooseClient).from(table);
 
 const BUCKET = "staff-documents";
 

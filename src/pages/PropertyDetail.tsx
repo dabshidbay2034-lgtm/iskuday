@@ -31,9 +31,7 @@ import { idFromListingParam, listingPath } from "@/lib/listing-url";
 import { ALL_FACETS, facetMatches } from "@/lib/facets";
 import { listingSeoDescription, listingSeoTitle, type ListingSeoInput } from "@/lib/listing-seo";
 import { useRoomBookedRanges, bookedUntil, formatBookedUntil } from "@/hooks/use-room-availability";
-
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
+import { looseFrom } from "@/lib/supabase-loose";
 
 const PropertyDetail = () => {
   const { id: idParam } = useParams<{ id: string }>();

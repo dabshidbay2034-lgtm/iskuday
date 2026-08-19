@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppAuth } from "@/hooks/use-auth";
 import { describeWriteError } from "@/hooks/use-rent";
+import { looseFrom } from "@/lib/supabase-loose";
 
 /**
  * Per-hotel access control (migration 20260810000001).
@@ -87,10 +88,6 @@ function toHotelMember(row: RawHotelMember): HotelMember {
     createdAt: row.created_at ?? null,
   };
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LooseClient = { from: (table: string) => any };
-const looseFrom = (table: string) => (supabase as unknown as LooseClient).from(table);
 
 // ── Task permission catalog ──────────────────────────────────────────────────
 
