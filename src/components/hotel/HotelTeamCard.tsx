@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { z } from "zod";
-import { Copy, Loader2, Mail, Shield, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
+import { Copy, Loader2, Mail, MessageCircle, Shield, ShieldAlert, Trash2, UserPlus, X } from "lucide-react";
 
 import { toast } from "sonner";
 import { useAppAuth } from "@/hooks/use-auth";
@@ -314,6 +314,36 @@ export function HotelTeamCard({
                       }}
                     >
                       <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    {/* WhatsApp is the actual delivery channel in this market.
+                        Email needs the send-notification function deployed;
+                        this needs nothing, works from a phone, and is what the
+                        hotel would have done with the copied link anyway. The
+                        message carries the role so the recipient knows what
+                        they are accepting before they click a token URL. */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-success"
+                      aria-label={`Send ${inv.email} their invitation on WhatsApp`}
+                      title="Send on WhatsApp"
+                      disabled={!inv.token}
+                      onClick={() => {
+                        const url = inviteJoinUrl(inv.token);
+                        if (!url) return;
+                        const role = HOTEL_ROLES[inv.role].label.toLowerCase();
+                        const text =
+                          `You have been invited to help manage our hotel on Mogadishu Rents as ${role}. ` +
+                          `Open this link and sign in to accept: ${url}`;
+                        window.open(
+                          `https://wa.me/?text=${encodeURIComponent(text)}`,
+                          "_blank",
+                          "noopener,noreferrer",
+                        );
+                      }}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
                     </Button>
                     <Button
                       type="button"

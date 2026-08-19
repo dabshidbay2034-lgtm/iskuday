@@ -10,6 +10,7 @@ import {
   HotelBookButton, HotelMobileActionBar, hasHotelContact,
 } from "@/components/hotel/HotelActionBar";
 import { PLATFORM_ROOT_DOMAIN, platformUrl } from "@/lib/tenant";
+import { POLICY_PAGE_SLUG } from "@/hooks/use-hotel-pages";
 
 /**
  * The chrome a hotel gets on ITS OWN subdomain (`jazeera.mogadishurents.com`).
@@ -233,7 +234,7 @@ function TenantHeader({ hotel, pages }: { hotel: TenantHotel; pages: TenantNavPa
   );
 }
 
-function TenantFooter({ hotel }: { hotel: TenantHotel }) {
+function TenantFooter({ hotel, pages }: { hotel: TenantHotel; pages: TenantNavPage[] }) {
   const whatsapp = hotel.contactWhatsapp?.replace(/[^\d]/g, "");
 
   return (
@@ -284,13 +285,25 @@ function TenantFooter({ hotel }: { hotel: TenantHotel }) {
 
         <div className="pt-4 border-t border-border/70 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <p>© {new Date().getFullYear()} {hotel.name}. All rights reserved.</p>
-          {/* Absolute: a relative "/" here stays on the tenant's own site. */}
-          <a
-            href={platformUrl("/")}
-            className="hover:text-foreground transition-colors"
-          >
-            Powered by MogadishuRents
-          </a>
+          <div className="flex items-center gap-4">
+            {/* The policy page is a normal tenant page; link it when it exists
+                (published), so a guest can always reach the house rules. */}
+            {pages?.some((p) => p.slug === POLICY_PAGE_SLUG) && (
+              <a
+                href={tenantPagePath(POLICY_PAGE_SLUG)}
+                className="hover:text-foreground transition-colors"
+              >
+                Policy
+              </a>
+            )}
+            {/* Absolute: a relative "/" here stays on the tenant's own site. */}
+            <a
+              href={platformUrl("/")}
+              className="hover:text-foreground transition-colors"
+            >
+              Powered by MogadishuRents
+            </a>
+          </div>
         </div>
       </div>
     </footer>
@@ -428,7 +441,7 @@ const TenantShell = ({ subdomain, children }: TenantShellProps) => {
     >
       <TenantHeader hotel={hotel} pages={pages ?? []} />
       <main className="flex-1">{children}</main>
-      <TenantFooter hotel={hotel} />
+      <TenantFooter hotel={hotel} pages={pages ?? []} />
       <HotelMobileActionBar hotel={hotel} />
     </div>
   );

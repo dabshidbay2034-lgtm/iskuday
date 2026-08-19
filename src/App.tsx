@@ -167,7 +167,11 @@ const App = () => (
             <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
             <Route path="/admin-panel" element={<ProtectedRoute allowedRoles={['admin' as UserRole]}><Admin /></ProtectedRoute>} />
             <Route path="/semiadmin" element={<ProtectedRoute allowedRoles={['semi_admin' as UserRole, 'admin' as UserRole]}><SemiAdmin /></ProtectedRoute>} />
-            <Route path="/team" element={<ProtectedRoute requireOrg={true} requirePermission={PERMISSIONS.STAFF_MANAGE}><Team /></ProtectedRoute>} />
+            {/* The hotel's own team, not a Clerk organization. Guarded on nothing but
+                sign-in: `my_hotel_ids()` decides what the visitor can reach, and an
+                INVITED member has no agency role and no org — gating on either would
+                lock out exactly the people this page exists for. */}
+            <Route path="/team" element={<ProtectedRoute><Team /></ProtectedRoute>} />
 
             {/* Property management â€” signed-in only, deliberately NOT gated on
                 requireOrg or an org permission.
