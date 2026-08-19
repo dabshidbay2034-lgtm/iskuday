@@ -116,7 +116,15 @@ export function useStartPayment() {
         redirectUrl: payload.redirect_url ?? null,
       };
     } catch {
-      setError("Couldn't reach the payment service. Check your connection and try again.");
+      // Deliberately does NOT say "check your connection". The most likely
+      // cause is ours, not theirs: an undeployed function returns 404, a 404
+      // cannot answer the CORS preflight, and the browser reports that as a
+      // bare network failure indistinguishable from being offline. Telling a
+      // guest to check their signal while our own function is missing sends
+      // them to reboot a router over our bug.
+      setError(
+        "Online payment isn't available right now. Choose \"pay at the hotel\", or call the hotel to arrange it.",
+      );
       return null;
     } finally {
       setStarting(false);
