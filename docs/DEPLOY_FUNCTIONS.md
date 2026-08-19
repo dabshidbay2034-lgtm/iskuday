@@ -1,6 +1,6 @@
 # Deploying the edge functions
 
-**Status right now: none of the three functions are deployed.** Verified by probing
+**Status right now: none of the four functions are deployed.** Verified by probing
 production — `clerk-webhook` and `increment-view` both return `404`.
 
 That single fact is causing two live bugs and blocking a third feature:
@@ -9,7 +9,8 @@ That single fact is causing two live bugs and blocking a third feature:
 |---|---|
 | `clerk-webhook` | **Every new signup gets no `profiles` row.** The Clerk migration deliberately dropped the `handle_new_user()` DB trigger and no client code inserts into `profiles`, so nothing creates it. Their name never appears anywhere, `Dashboard.tsx:68`'s `.single()` throws for them, and "save name" silently updates 0 rows. `BOOTSTRAP_ADMIN_IDS` also never fires. |
 | `increment-view` | **View counting has never worked.** Every property page throws a CORS error on preflight, because a 404 can't answer `OPTIONS`. `properties.views` is permanently 0. |
-| `send-notification` | Booking requests and service inquiries reach nobody. |
+| `send-notification` | Booking requests and service inquiries reach nobody. **And no hotel team invitation email has ever been sent** — the trigger in `20260814000001` fires the `hotel_invite` branch of this function, so the whole path is written and has simply never run. Until it is deployed, invites work only by the copy-link and WhatsApp buttons on the team page. |
+| `sifalo-payment` | **No online payment can start.** Booking checkout and the billing page both call it; without it a guest can only choose "pay at the hotel" and an operator can only settle a subscription by phone. |
 
 Existing accounts predate the migration, which is why this hasn't surfaced yet.
 
@@ -118,17 +119,53 @@ npx supabase secrets set --env-file supabase/.env.production
 ```
 </details>
 
+### Sifalo Pay
+
+Three more secrets, for `sifalo-payment`. The first two come from the merchant
+dashboard at <https://pay.sifalo.com/business/merchant/api>:
+
+```
+SIFALO_API_USER=...
+SIFALO_API_KEY=...
+SIFALO_CALLBACK_SECRET=...
+```
+
+`SIFALO_CALLBACK_SECRET` is **yours to invent** — any long random string. Set the
+same value on the Sifalo dashboard's callback URL, either as an `x-sifalo-secret`
+header or a `?secret=` query parameter. Without it the function refuses every
+callback, which is deliberate: an unauthenticated callback URL is a
+"mark any booking paid" endpoint.
+
+Point the dashboard's callback at:
+
+```
+https://hetaveowlxcjuxbtckqt.supabase.co/functions/v1/sifalo-payment/callback
+```
+
+⚠ **Not verified against a live merchant account.** The request shape
+(`account` / `gateway` / `amount` / `currency` / `order_id`) comes from Sifalo's
+published integration material, but the endpoint PATH and the response field
+names could not be confirmed without credentials. Both are isolated in `SIFALO`
+and `readProviderRef` at the top of
+`supabase/functions/sifalo-payment/index.ts` — if the first live payment fails,
+those two are what to correct, and nothing else in the file should need to
+change. `SIFALO_API_BASE` overrides the base URL without a redeploy.
+
+Until these are set the function returns a clean *"Online payment is not
+switched on yet"* and the booking form falls back to paying at the hotel, which
+is how every listing worked before online payment existed.
+
 ## 4. Deploy
 
 ```bash
-npx supabase functions deploy clerk-webhook increment-view send-notification
+npx supabase functions deploy clerk-webhook increment-view send-notification sifalo-payment
 ```
 
 Then confirm they answer — a `404` means not deployed; `401`/`400` means deployed and
 correctly rejecting an unsigned request:
 
 ```powershell
-foreach ($f in "clerk-webhook","increment-view","send-notification") {
+foreach ($f in "clerk-webhook","increment-view","send-notification","sifalo-payment") {
   $u = "https://hetaveowlxcjuxbtckqt.supabase.co/functions/v1/$f"
   try   { $c = (Invoke-WebRequest -Uri $u -Method POST -Body '{}' -UseBasicParsing).StatusCode }
   catch { $c = $_.Exception.Response.StatusCode.value__ }
@@ -143,7 +180,7 @@ and correctly refusing an unsigned request — that is the result you want.
 <summary>macOS / Linux equivalent</summary>
 
 ```bash
-for f in clerk-webhook increment-view send-notification; do
+for f in clerk-webhook increment-view send-notification sifalo-payment; do
   printf "%s: " "$f"
   curl -s -o /dev/null -w "%{http_code}\n" -X POST \
     "https://hetaveowlxcjuxbtckqt.supabase.co/functions/v1/$f" -d '{}'
@@ -208,6 +245,34 @@ Migrations first, then functions — `send-notification` reads tables that
 20260812000002_account_type_separation.sql
 20260813000001_native_hotel_team.sql
 20260814000001_notification_triggers.sql
+```
+
+### Migrations added since, still unapplied
+
+These four are written but have **not** been run against any database. The app
+degrades gracefully without them — every read defaults, and both hotel mutations
+retry with the new columns stripped — so a half-rolled-out deploy will not lock
+anyone out. Nothing they add works until they are applied.
+
+```
+20260904000001_raise_hotel_page_cap.sql     hotel page limit 3 → 8 (trigger must
+                                            match MAX_HOTEL_PAGES in the client,
+                                            or the UI and database disagree)
+20260904000002_hotel_page_seo.sql           per-page SEO title/description
+20260905000001_payments.sql                 payments ledger, hotel payment options,
+                                            deposit percentage  ← online payment is
+                                            inert until this runs
+20260905000002_booking_contact_required.sql phone-or-email on non-walk-in bookings.
+                                            Counts violating rows first and refuses
+                                            with instructions rather than emitting a
+                                            bare check violation
+20260906000001_hotel_theme.sql              typography / corners / colour scheme
+```
+
+Apply with:
+
+```bash
+npx supabase db push
 ```
 
 ## Known limitation, unrelated to deployment
