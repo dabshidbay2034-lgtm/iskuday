@@ -89,6 +89,9 @@ const EditHotel = () => {
     // taking bookings exactly as it did before online payment existed.
     paymentOptions: ["pay_now", "deposit", "at_hotel"],
     depositPercent: 25,
+    fontPairing: "modern",
+    cornerStyle: "soft",
+    themeMode: "auto",
     isPublished: false,
   });
   const [sections, setSections] = useState<PageSection[]>([]);
@@ -133,6 +136,9 @@ const EditHotel = () => {
       district: h.district ?? "",
       paymentOptions: h.paymentOptions?.length ? h.paymentOptions : ["at_hotel"],
       depositPercent: h.depositPercent || 25,
+      fontPairing: h.fontPairing || "modern",
+      cornerStyle: h.cornerStyle || "soft",
+      themeMode: h.themeMode || "auto",
       mapsUrl: h.mapsUrl ?? "",
       socials: {
         facebook: h.socials?.facebook ?? "",
@@ -208,6 +214,9 @@ const EditHotel = () => {
     // Clamped on the way out as well as in the database: the number input lets
     // someone pass through 0 while typing, and a 0% deposit is a free stay.
     depositPercent: clampPercent(settings.depositPercent),
+    fontPairing: settings.fontPairing,
+    cornerStyle: settings.cornerStyle,
+    themeMode: settings.themeMode,
   }), [settings, sections]);
 
   const selected = sections.find((s) => s.id === selectedId) ?? null;

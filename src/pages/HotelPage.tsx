@@ -13,6 +13,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { brandFromHotel, PageSectionView } from "@/components/hotel/PageSectionView";
 import HotelFooter from "@/components/hotel/HotelFooter";
 import { platformHotelPagePath } from "@/lib/hotel-links";
+import { hotelTheme, hotelThemeStyle } from "@/lib/hotel-theme";
+import { useHotelThemeMode } from "@/hooks/use-hotel-theme";
 import {
   HotelBookButton, HotelMobileActionBar, hasHotelContact,
 } from "@/components/hotel/HotelActionBar";
@@ -84,6 +86,17 @@ const HotelPage = () => {
     safePageSlug,
   );
   const { data: allPages } = useHotelPages(hotel?.id);
+
+  // Coerced here rather than trusted: a key this build does not know about —
+  // a row written by a newer deploy reaching an older client mid-rollout —
+  // falls back to the default instead of rendering a page with no font.
+  const theme = hotelTheme({
+    fontPairing: hotel?.fontPairing,
+    cornerStyle: hotel?.cornerStyle,
+    themeMode: hotel?.themeMode,
+  });
+  // Owns <html> while this page is mounted, and puts it back on the way out.
+  useHotelThemeMode(hotel ? theme.themeMode : undefined);
   const menuPages = (allPages ?? []).filter((page) => page.isPublished);
   const { data: roomLinks } = useHotelRooms(hotel?.id);
 
@@ -222,7 +235,7 @@ const HotelPage = () => {
     // is fixed at z-50 on mobile, and without the clearance it sits on top of
     // the footer — the copyright and the "Powered by Mogadishu Rents" link both
     // become untappable on a phone, which is most of this audience.
-    <div className="min-h-screen bg-background pb-20 md:pb-0">
+    <div className="min-h-screen bg-background pb-20 md:pb-0" style={hotelThemeStyle(theme)}>
       {/* Reached only after `hotel` resolved and is published, so the canonical
           is guaranteed to describe a real, live page. `hotel.slug` (not the raw
           `slug` param) is the canonical spelling straight from the database. */}

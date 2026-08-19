@@ -15,11 +15,17 @@ export default {
   	},
   	extend: {
   		fontFamily: {
+  			// Resolved through a CSS variable so a hotel can swap the pairing at
+  			// runtime (src/lib/hotel-theme.ts). The fallback after the var is what
+  			// every page outside a hotel site uses, and what a hotel page renders
+  			// before its row loads — so nothing ever paints in a default serif.
   			heading: [
+  				'var(--hotel-font-heading, "Plus Jakarta Sans")',
   				'Plus Jakarta Sans',
   				'sans-serif'
   			],
   			body: [
+  				'var(--hotel-font-body, Inter)',
   				'Inter',
   				'sans-serif'
   			],

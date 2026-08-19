@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
 import { PAYMENT_OPTIONS, PAYMENT_OPTION_META } from "@/lib/payments";
+import { CORNER_STYLES, FONT_PAIRINGS, THEME_MODES } from "@/lib/hotel-theme";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { SECTION_META, type PageSection } from "@/components/hotel/page-sections";
@@ -35,6 +36,10 @@ export type PageSettings = {
   paymentOptions: string[];
   /** Share taken up front when a deposit is offered. */
   depositPercent: number;
+  /** Look presets — see src/lib/hotel-theme.ts. */
+  fontPairing: string;
+  cornerStyle: string;
+  themeMode: string;
   isPublished: boolean;
 };
 
@@ -340,6 +345,92 @@ function PageTab({
             })}
           </ul>
         )}
+      </Group>
+
+      {/* ── Style ─────────────────────────────────────────────────────────────
+          Three presets per axis, not a theme editor. The reasoning is in
+          src/lib/hotel-theme.ts: a hotel manager on a phone wants their site
+          online tonight and looking deliberate, and three pairings that were
+          each chosen to work means everyone lands somewhere good. A free font
+          picker means most land somewhere bad, and the ones who try hardest
+          land worst. */}
+      <Group title="Style">
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Typography</Label>
+            <div className="space-y-1.5">
+              {FONT_PAIRINGS.map((pairing) => (
+                <button
+                  key={pairing.key}
+                  type="button"
+                  onClick={() => onChange({ fontPairing: pairing.key })}
+                  aria-pressed={settings.fontPairing === pairing.key}
+                  className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors ${
+                    settings.fontPairing === pairing.key
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-background hover:border-primary/40"
+                  }`}
+                >
+                  {/* The preset's own heading face, so the choice is legible as
+                      itself rather than as a word describing itself. */}
+                  <span
+                    className="block text-sm text-foreground"
+                    style={{ fontFamily: pairing.heading }}
+                  >
+                    {pairing.label}
+                  </span>
+                  <span className="block text-[10px] text-muted-foreground">{pairing.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Corners</Label>
+            <div className="flex gap-1.5">
+              {CORNER_STYLES.map((corner) => (
+                <button
+                  key={corner.key}
+                  type="button"
+                  onClick={() => onChange({ cornerStyle: corner.key })}
+                  aria-pressed={settings.cornerStyle === corner.key}
+                  className={`flex-1 border px-2 py-1.5 text-[11px] transition-colors ${
+                    settings.cornerStyle === corner.key
+                      ? "border-primary bg-primary/5 text-foreground"
+                      : "border-border bg-background text-muted-foreground hover:border-primary/40"
+                  }`}
+                  // Inline, not a class: the radius is data, and a built-up
+                  // Tailwind class name is never seen by the JIT scanner.
+                  style={{ borderRadius: corner.radius }}
+                >
+                  {corner.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Colour scheme</Label>
+            <Select
+              value={settings.themeMode}
+              onValueChange={(v) => onChange({ themeMode: v })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {THEME_MODES.map((mode) => (
+                  <SelectItem key={mode.key} value={mode.key} className="text-xs">
+                    {mode.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Applies to your public page only — not to this editor.
+            </p>
+          </div>
+        </div>
       </Group>
 
       {/* ── Payment ───────────────────────────────────────────────────────────

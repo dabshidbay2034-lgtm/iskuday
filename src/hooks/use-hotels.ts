@@ -64,6 +64,10 @@ export type Hotel = {
   paymentOptions: string[];
   /** Share taken up front when `deposit` is offered. Product default 25. */
   depositPercent: number;
+  /** Typography / corner / colour-scheme preset. See src/lib/hotel-theme.ts. */
+  fontPairing: string;
+  cornerStyle: string;
+  themeMode: string;
   /** The ordered blocks the public page renders (hero → … → contact). */
   sections: PageSection[];
   isPublished: boolean;
@@ -112,6 +116,10 @@ type RawHotel = {
   /** Optional: absent on a database without 20260905000001 applied. */
   payment_options?: string[] | null;
   deposit_percent?: number | null;
+  /** Optional: absent without 20260906000001. */
+  font_pairing?: string | null;
+  corner_style?: string | null;
+  theme_mode?: string | null;
   sections?: unknown;
   is_published: boolean | null;
   created_at: string | null;
@@ -150,6 +158,11 @@ function toHotel(row: RawHotel): Hotel {
     // returns neither column, and a hotel must still load and render.
     paymentOptions: row.payment_options ?? ["at_hotel"],
     depositPercent: Number(row.deposit_percent ?? 25),
+    // `hotelTheme()` coerces anything unrecognised back to the default, so
+    // these can be handed straight through without validating here.
+    fontPairing: row.font_pairing ?? "modern",
+    cornerStyle: row.corner_style ?? "soft",
+    themeMode: row.theme_mode ?? "auto",
     isPublished: row.is_published ?? false,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
@@ -202,6 +215,11 @@ function isMissingDistrictColumn(error: unknown): boolean {
  */
 function isMissingPaymentColumn(error: unknown): boolean {
   return isMissingColumn(error, /payment_options|deposit_percent/i);
+}
+
+/** The theme columns arrive with 20260906000001. Same scaffolding, same rule. */
+function isMissingThemeColumn(error: unknown): boolean {
+  return isMissingColumn(error, /font_pairing|corner_style|theme_mode/i);
 }
 
 function isMissingColumn(error: unknown, column: RegExp): boolean {
@@ -384,6 +402,9 @@ export type HotelFormInput = {
   socials?: HotelSocials;
   paymentOptions?: string[];
   depositPercent?: number;
+  fontPairing?: string;
+  cornerStyle?: string;
+  themeMode?: string;
   /** The ordered page blocks. When set, the scalar fields below are mirrored from it. */
   sections?: PageSection[];
   isPublished?: boolean;
@@ -441,11 +462,18 @@ export function useCreateHotel() {
           socials: input.socials ?? {},
           payment_options: input.paymentOptions ?? ["at_hotel"],
           deposit_percent: input.depositPercent ?? 25,
+          font_pairing: input.fontPairing ?? "modern",
+          corner_style: input.cornerStyle ?? "soft",
+          theme_mode: input.themeMode ?? "auto",
           sections,
           is_published: input.isPublished ?? false,
       };
 
       let { data, error } = await looseFrom("hotels").insert(payload).select("*").single();
+      if (error && isMissingThemeColumn(error)) {
+        const { font_pairing: _fp, corner_style: _cs, theme_mode: _tm, ...withoutTheme } = payload;
+        ({ data, error } = await looseFrom("hotels").insert(withoutTheme).select("*").single());
+      }
       if (error && isMissingPaymentColumn(error)) {
         const { payment_options: _po, deposit_percent: _dp, ...withoutPayment } = payload;
         ({ data, error } = await looseFrom("hotels").insert(withoutPayment).select("*").single());
@@ -494,12 +522,20 @@ export function useUpdateHotel() {
           socials: input.socials ?? {},
           payment_options: input.paymentOptions ?? ["at_hotel"],
           deposit_percent: input.depositPercent ?? 25,
+          font_pairing: input.fontPairing ?? "modern",
+          corner_style: input.cornerStyle ?? "soft",
+          theme_mode: input.themeMode ?? "auto",
           sections,
           is_published: input.isPublished ?? false,
       };
 
       let { data, error } = await looseFrom("hotels")
         .update(payload).eq("id", id).select("*").single();
+      if (error && isMissingThemeColumn(error)) {
+        const { font_pairing: _fp, corner_style: _cs, theme_mode: _tm, ...withoutTheme } = payload;
+        ({ data, error } = await looseFrom("hotels")
+          .update(withoutTheme).eq("id", id).select("*").single());
+      }
       if (error && isMissingPaymentColumn(error)) {
         const { payment_options: _po, deposit_percent: _dp, ...withoutPayment } = payload;
         ({ data, error } = await looseFrom("hotels")
