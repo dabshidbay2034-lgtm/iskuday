@@ -31,6 +31,15 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   // Clerk owns the session; Supabase just validates the JWT it issues and
   // exposes the claims to RLS through auth.jwt().
   accessToken: async () => {
+    // `typeof window` guard, not a bare `window.Clerk`. supabase-js invokes
+    // this callback while CONSTRUCTING the client, which happens at import
+    // time — so in Node (a prerender pass, a test, any server-side render) it
+    // ran before anything could catch it and logged "Failed to set initial
+    // Realtime auth token: window is not defined" on every import. There is no
+    // Clerk session outside a browser by definition, so the honest answer there
+    // is "anonymous".
+    if (typeof window === "undefined") return null;
+
     const session = window.Clerk?.session;
     if (!session) return null;
 

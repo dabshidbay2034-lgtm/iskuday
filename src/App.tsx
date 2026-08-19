@@ -1,6 +1,6 @@
 ﻿import type { UserRole } from "@/lib/types";
 import { PERMISSIONS } from "@/lib/permissions";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -85,9 +85,24 @@ const queryClient = new QueryClient({
  * Locally there is no wildcard cert, so `resolveTenant` also honours
  * `<sub>.localhost:8080` and `?__tenant=<sub>` â€” see docs/SUBDOMAINS.md.
  */
-const tenant = resolveTenant();
+/*
+ * WHY resolveTenant() IS NOT AT MODULE SCOPE
+ *
+ * It used to be `const tenant = resolveTenant()` right here, which read fine
+ * and quietly made the whole app impossible to render outside a browser:
+ * resolveTenant() reads window.location, so merely IMPORTING App.tsx in Node
+ * threw before a single component ran. That was the one thing standing between
+ * this project and build-time prerendering, which is what puts real HTML in
+ * front of a crawler instead of an empty shell.
+ *
+ * useMemo with an empty dependency list keeps the property that mattered --
+ * resolved once, never re-run on a re-render -- while deferring the window
+ * read to render time, where a browser exists.
+ */
+const App = () => {
+  const tenant = useMemo(() => resolveTenant(), []);
 
-const App = () => (
+  return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -231,8 +246,9 @@ const App = () => (
         </ErrorBoundary>
       </BrowserRouter>
     </TooltipProvider>
-  </QueryClientProvider>
-);
+    </QueryClientProvider>
+  );
+};
 
 export default App;
 
