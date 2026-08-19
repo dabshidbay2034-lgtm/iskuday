@@ -30,13 +30,26 @@ import type { GatewayKey, PaymentOption } from "@/lib/payments";
 
 export type PaymentStatus = "pending" | "paid" | "failed" | "cancelled" | "refunded";
 
-export type StartPaymentInput = {
+/** Paying for a stay. */
+export type StartBookingPayment = {
+  purpose?: "booking";
   bookingId: string;
   option: Exclude<PaymentOption, "at_hotel">;
   gateway: GatewayKey;
-  /** The msisdn the guest pays from. Empty for card. */
+  /** The msisdn the payer pays from. Empty for card. */
   account: string;
 };
+
+/** Paying for a plan. The price is read server-side from the plan catalogue. */
+export type StartSubscriptionPayment = {
+  purpose: "subscription";
+  subscriptionId: string;
+  plan: string;
+  gateway: GatewayKey;
+  account: string;
+};
+
+export type StartPaymentInput = StartBookingPayment | StartSubscriptionPayment;
 
 export type StartedPayment = {
   paymentId: string;
@@ -60,12 +73,25 @@ export function useStartPayment() {
     setError(null);
     try {
       const { data, error: fnError } = await supabase.functions.invoke("sifalo-payment/create", {
-        body: {
-          booking_id: input.bookingId,
-          payment_option: input.option,
-          gateway: input.gateway,
-          account: input.account,
-        },
+        // Only the fields that purpose actually uses. Sending a booking id on a
+        // subscription payment would be noise the function has to ignore, and
+        // noise it ignores today is noise somebody trusts tomorrow.
+        body:
+          input.purpose === "subscription"
+            ? {
+                purpose: "subscription",
+                subscription_id: input.subscriptionId,
+                plan: input.plan,
+                gateway: input.gateway,
+                account: input.account,
+              }
+            : {
+                purpose: "booking",
+                booking_id: input.bookingId,
+                payment_option: input.option,
+                gateway: input.gateway,
+                account: input.account,
+              },
       });
 
       // `functions.invoke` reports a non-2xx as an error but still carries the

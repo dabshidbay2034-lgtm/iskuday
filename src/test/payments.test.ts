@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PLANS, planById } from "@/lib/plans";
 import {
   GATEWAYS,
   PAYMENT_OPTIONS,
@@ -136,5 +137,35 @@ describe("gateways", () => {
 
   it("returns nothing for a gateway it does not know", () => {
     expect(gatewayMeta("paypal")).toBeUndefined();
+  });
+});
+
+describe("plan prices duplicated into the edge function", () => {
+  /**
+   * supabase/functions/sifalo-payment/index.ts holds PLAN_PRICE_USD, because an
+   * edge function cannot import from the app bundle. If these drift, an
+   * operator is quoted one figure on the billing page and charged another.
+   * Update BOTH when a price changes.
+   */
+  const EDGE_FUNCTION_PRICES: Record<string, number> = {
+    hotel: 99.99,
+    pms: 60.0,
+  };
+
+  it("matches the catalogue the billing page renders", () => {
+    for (const plan of PLANS) {
+      expect(EDGE_FUNCTION_PRICES[plan.id]).toBe(plan.priceUsd);
+    }
+  });
+
+  it("covers every plan, so a new one cannot ship uncharged", () => {
+    expect(Object.keys(EDGE_FUNCTION_PRICES).sort()).toEqual(PLANS.map((p) => p.id).sort());
+  });
+
+  it("prices are positive — a zero would charge nothing and settle anyway", () => {
+    for (const id of Object.keys(EDGE_FUNCTION_PRICES)) {
+      expect(EDGE_FUNCTION_PRICES[id]).toBeGreaterThan(0);
+      expect(planById(id as "hotel" | "pms").priceUsd).toBeGreaterThan(0);
+    }
   });
 });

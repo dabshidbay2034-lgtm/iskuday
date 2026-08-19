@@ -56,6 +56,14 @@ export type Hotel = {
   district: string | null;
   mapsUrl: string | null;
   socials: HotelSocials;
+  /**
+   * How this hotel lets a guest pay: any of pay_now / deposit / at_hotel.
+   * Empty or unrecognised falls back to at_hotel in `offeredOptions`, which
+   * is how every listing worked before online payment existed.
+   */
+  paymentOptions: string[];
+  /** Share taken up front when `deposit` is offered. Product default 25. */
+  depositPercent: number;
   /** The ordered blocks the public page renders (hero → … → contact). */
   sections: PageSection[];
   isPublished: boolean;
@@ -101,6 +109,9 @@ type RawHotel = {
   district: string | null;
   maps_url: string | null;
   socials: Record<string, string> | null;
+  /** Optional: absent on a database without 20260905000001 applied. */
+  payment_options?: string[] | null;
+  deposit_percent?: number | null;
   sections?: unknown;
   is_published: boolean | null;
   created_at: string | null;
@@ -135,6 +146,10 @@ function toHotel(row: RawHotel): Hotel {
     district: row.district ?? null,
     mapsUrl: row.maps_url ?? null,
     socials: row.socials ?? {},
+    // Defaults, not assumptions: a database without 20260905000001 applied
+    // returns neither column, and a hotel must still load and render.
+    paymentOptions: row.payment_options ?? ["at_hotel"],
+    depositPercent: Number(row.deposit_percent ?? 25),
     isPublished: row.is_published ?? false,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
@@ -175,9 +190,24 @@ function toHotel(row: RawHotel): Hotel {
  * not architecture, and it would mask a genuine schema drift if left forever.
  */
 function isMissingDistrictColumn(error: unknown): boolean {
+  return isMissingColumn(error, /district/i);
+}
+
+/**
+ * The payment columns arrive with 20260905000001. Same scaffolding, same
+ * reason, same instruction: delete it once that migration is applied
+ * everywhere. A hotel must stay editable on a database that is one
+ * migration behind, or a half-rolled-out deploy locks every owner out of
+ * their own page.
+ */
+function isMissingPaymentColumn(error: unknown): boolean {
+  return isMissingColumn(error, /payment_options|deposit_percent/i);
+}
+
+function isMissingColumn(error: unknown, column: RegExp): boolean {
   const e = error as { code?: string; message?: string } | null;
   const code = e?.code ?? "";
-  return (code === "42703" || code === "PGRST204") && /district/i.test(e?.message ?? "");
+  return (code === "42703" || code === "PGRST204") && column.test(e?.message ?? "");
 }
 
 // ── Slugs ────────────────────────────────────────────────────────────────────
@@ -352,6 +382,8 @@ export type HotelFormInput = {
   district?: string;
   mapsUrl?: string;
   socials?: HotelSocials;
+  paymentOptions?: string[];
+  depositPercent?: number;
   /** The ordered page blocks. When set, the scalar fields below are mirrored from it. */
   sections?: PageSection[];
   isPublished?: boolean;
@@ -407,11 +439,17 @@ export function useCreateHotel() {
           district: input.district?.trim() || null,
           maps_url: input.mapsUrl?.trim() || null,
           socials: input.socials ?? {},
+          payment_options: input.paymentOptions ?? ["at_hotel"],
+          deposit_percent: input.depositPercent ?? 25,
           sections,
           is_published: input.isPublished ?? false,
       };
 
       let { data, error } = await looseFrom("hotels").insert(payload).select("*").single();
+      if (error && isMissingPaymentColumn(error)) {
+        const { payment_options: _po, deposit_percent: _dp, ...withoutPayment } = payload;
+        ({ data, error } = await looseFrom("hotels").insert(withoutPayment).select("*").single());
+      }
       if (error && isMissingDistrictColumn(error)) {
         const { district: _unused, ...withoutDistrict } = payload;
         ({ data, error } = await looseFrom("hotels").insert(withoutDistrict).select("*").single());
@@ -454,12 +492,19 @@ export function useUpdateHotel() {
           district: input.district?.trim() || null,
           maps_url: input.mapsUrl?.trim() || null,
           socials: input.socials ?? {},
+          payment_options: input.paymentOptions ?? ["at_hotel"],
+          deposit_percent: input.depositPercent ?? 25,
           sections,
           is_published: input.isPublished ?? false,
       };
 
       let { data, error } = await looseFrom("hotels")
         .update(payload).eq("id", id).select("*").single();
+      if (error && isMissingPaymentColumn(error)) {
+        const { payment_options: _po, deposit_percent: _dp, ...withoutPayment } = payload;
+        ({ data, error } = await looseFrom("hotels")
+          .update(withoutPayment).eq("id", id).select("*").single());
+      }
       if (error && isMissingDistrictColumn(error)) {
         const { district: _unused, ...withoutDistrict } = payload;
         ({ data, error } = await looseFrom("hotels")

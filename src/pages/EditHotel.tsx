@@ -28,6 +28,7 @@ import { useAppAuth } from "@/hooks/use-auth";
 import { useOrgProperties } from "@/hooks/use-rent";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { clampPercent } from "@/lib/payments";
 
 const DEVICES: { value: DeviceMode; Icon: typeof Monitor; label: string }[] = [
   { value: "desktop", Icon: Monitor, label: "Desktop" },
@@ -84,6 +85,10 @@ const EditHotel = () => {
     name: "", accentColor: "#0f766e", logoUrl: "",
     contactPhone: "", contactWhatsapp: "", contactEmail: "", address: "", district: "", mapsUrl: "",
     socials: { facebook: "", instagram: "", tiktok: "", twitter: "" },
+    // Matches the database default. A hotel that never opens this panel keeps
+    // taking bookings exactly as it did before online payment existed.
+    paymentOptions: ["pay_now", "deposit", "at_hotel"],
+    depositPercent: 25,
     isPublished: false,
   });
   const [sections, setSections] = useState<PageSection[]>([]);
@@ -126,6 +131,8 @@ const EditHotel = () => {
       contactEmail: h.contactEmail ?? "",
       address: h.address ?? "",
       district: h.district ?? "",
+      paymentOptions: h.paymentOptions?.length ? h.paymentOptions : ["at_hotel"],
+      depositPercent: h.depositPercent || 25,
       mapsUrl: h.mapsUrl ?? "",
       socials: {
         facebook: h.socials?.facebook ?? "",
@@ -197,6 +204,10 @@ const EditHotel = () => {
     address: settings.address || null,
     mapsUrl: settings.mapsUrl || null,
     socials: settings.socials,
+    paymentOptions: settings.paymentOptions,
+    // Clamped on the way out as well as in the database: the number input lets
+    // someone pass through 0 while typing, and a 0% deposit is a free stay.
+    depositPercent: clampPercent(settings.depositPercent),
   }), [settings, sections]);
 
   const selected = sections.find((s) => s.id === selectedId) ?? null;

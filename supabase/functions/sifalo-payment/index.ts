@@ -105,6 +105,20 @@ function amountDueNow(total: number, option: string, depositPercent: number): nu
   return Math.ceil((total * clampPercent(depositPercent)) / 100 * 100) / 100;
 }
 
+/**
+ * Plan prices, in USD.
+ *
+ * MUST match PLANS in src/lib/plans.ts. Duplicated for the same reason the
+ * deposit rounding is: an edge function cannot import from the app bundle. And
+ * for the same reason as the booking amount, the price is read HERE and never
+ * from the request — a client that posts its own figure is posting a wish.
+ * src/test/payments.test.ts pins these against the catalogue.
+ */
+const PLAN_PRICE_USD: Record<string, number> = {
+  hotel: 99.99,
+  pms: 60.0,
+};
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -141,13 +155,21 @@ Deno.serve(async (req) => {
  */
 async function handleCreate(req: Request, db: ReturnType<typeof createClient>) {
   const body = await req.json().catch(() => ({}));
-  const bookingId = String(body?.booking_id ?? "");
-  const option = String(body?.payment_option ?? "");
+  const purpose = String(body?.purpose ?? "booking");
   const gateway = String(body?.gateway ?? "");
   const account = String(body?.account ?? "").replace(/\D/g, "");
 
-  if (!bookingId || !option || !gateway) {
-    return json({ error: "Missing booking, payment option or wallet." }, 400);
+  if (!gateway) return json({ error: "Choose how you want to pay." }, 400);
+
+  if (purpose === "subscription") {
+    return await createSubscriptionPayment(body, db, { gateway, account });
+  }
+
+  const bookingId = String(body?.booking_id ?? "");
+  const option = String(body?.payment_option ?? "");
+
+  if (!bookingId || !option) {
+    return json({ error: "Missing booking or payment option." }, 400);
   }
   if (option === "at_hotel") {
     // Not an error the guest caused, but there is nothing to charge and calling
@@ -220,28 +242,132 @@ async function handleCreate(req: Request, db: ReturnType<typeof createClient>) {
   // reaches this function anyway.
   await db.from("bookings").update({ payment_option: option }).eq("id", b.id);
 
+  return await pushToProvider(db, {
+    paymentId,
+    amount,
+    gateway,
+    account,
+    description: `Booking at ${hotel?.name ?? "hotel"}`,
+  });
+}
+
+/**
+ * Open a payment for a plan subscription.
+ *
+ * The price comes from PLAN_PRICE_USD here, never from the request — same rule
+ * as a booking. The subscription id IS taken from the client, and deliberately
+ * not authorised beyond existing: the only thing a forged id buys you is paying
+ * somebody else's bill, and refusing that would mean an accountant cannot
+ * settle an account they do not personally own.
+ */
+async function createSubscriptionPayment(
+  body: Record<string, unknown>,
+  db: ReturnType<typeof createClient>,
+  wallet: { gateway: string; account: string },
+) {
+  const subscriptionId = String(body?.subscription_id ?? "");
+  const plan = String(body?.plan ?? "");
+
+  if (!subscriptionId || !plan) {
+    return json({ error: "Missing subscription or plan." }, 400);
+  }
+  const amount = PLAN_PRICE_USD[plan];
+  if (!amount) {
+    return json({ error: "Unknown plan." }, 400);
+  }
+
+  const { data: subscription, error: subError } = await db
+    .from("subscriptions")
+    .select("id, subject_type, subject_id, plan")
+    .eq("id", subscriptionId)
+    .maybeSingle();
+
+  if (subError || !subscription) {
+    return json({ error: "Subscription not found." }, 404);
+  }
+  const sub = subscription as unknown as {
+    id: string;
+    subject_type: string;
+    subject_id: string;
+    plan: string;
+  };
+
+  if (sub.plan !== plan) {
+    return json({ error: "That plan does not match this subscription." }, 400);
+  }
+
+  const { data: payment, error: paymentError } = await db
+    .from("payments")
+    .insert({
+      // `org_id` on a payments row is the billing subject. A personal
+      // subscription is subject_type 'user', and the column takes that id too —
+      // it is TEXT precisely because Clerk ids are not uuids.
+      org_id: sub.subject_id,
+      purpose: "subscription",
+      kind: "full",
+      provider: "sifalo",
+      gateway: wallet.gateway,
+      account: wallet.account,
+      amount,
+      currency: "USD",
+      status: "pending",
+      raw: { subscription_id: sub.id, plan },
+    })
+    .select("id")
+    .single();
+
+  if (paymentError || !payment) {
+    console.error("[sifalo] could not open subscription payment", paymentError);
+    return json({ error: "Could not start the payment." }, 500);
+  }
+
+  return await pushToProvider(db, {
+    paymentId: (payment as { id: string }).id,
+    amount,
+    gateway: wallet.gateway,
+    account: wallet.account,
+    description: `${plan === "hotel" ? "Hotel Management + PMS" : "PMS"} subscription`,
+  });
+}
+
+/**
+ * Hand one opened payment to Sifalo.
+ *
+ * Shared by bookings and subscriptions so there is exactly one place that knows
+ * the provider's request shape, one place that decides what a failure means,
+ * and one place to correct when the first live payment tells us the endpoint is
+ * spelled differently.
+ */
+async function pushToProvider(
+  db: ReturnType<typeof createClient>,
+  input: {
+    paymentId: string;
+    amount: number;
+    gateway: string;
+    account: string;
+    description: string;
+  },
+) {
   const apiUser = Deno.env.get("SIFALO_API_USER");
   const apiKey = Deno.env.get("SIFALO_API_KEY");
   if (!apiUser || !apiKey) {
-    // Configuration, not the guest's fault. The pending row stays so the desk
-    // can see that somebody tried and why it went nowhere.
     console.error("[sifalo] SIFALO_API_USER / SIFALO_API_KEY not set");
     await db.rpc("record_payment_result", {
-      _payment_id: paymentId,
+      _payment_id: input.paymentId,
       _status: "failed",
       _failure_reason: "Sifalo credentials are not configured on the server.",
     });
     return json({ error: "Online payment is not switched on yet." }, 503);
   }
 
-  // `order_id` is our payment id, which is what makes the callback matchable.
   const providerBody = {
-    account,
-    gateway,
-    amount: amount.toFixed(2),
+    account: input.account,
+    gateway: input.gateway,
+    amount: input.amount.toFixed(2),
     currency: "USD",
-    order_id: paymentId,
-    description: `Booking at ${hotel?.name ?? "hotel"}`,
+    // Our payment id, which is what makes the callback matchable.
+    order_id: input.paymentId,
+    description: input.description,
   };
 
   let providerJson: Record<string, unknown> = {};
@@ -264,7 +390,7 @@ async function handleCreate(req: Request, db: ReturnType<typeof createClient>) {
 
   if (!ok) {
     await db.rpc("record_payment_result", {
-      _payment_id: paymentId,
+      _payment_id: input.paymentId,
       _status: "failed",
       _raw: providerJson,
       _failure_reason: readMessage(providerJson) ?? "The payment service did not respond.",
@@ -275,19 +401,17 @@ async function handleCreate(req: Request, db: ReturnType<typeof createClient>) {
     );
   }
 
-  // Some gateways settle synchronously and some push to the handset and call
-  // back. Record a reference either way; the callback is still the only thing
-  // that may mark it paid.
   const ref = readProviderRef(providerJson);
   if (ref) {
-    await db.from("payments").update({ provider_ref: ref, raw: providerJson }).eq("id", paymentId);
+    await db
+      .from("payments")
+      .update({ provider_ref: ref, raw: providerJson })
+      .eq("id", input.paymentId);
   }
 
   return json({
-    payment_id: paymentId,
-    amount,
-    // Present for card flows; absent for a wallet push, where the guest just
-    // approves on their handset and we wait for the callback.
+    payment_id: input.paymentId,
+    amount: input.amount,
     redirect_url: readString(providerJson, ["redirect_url", "checkout_url", "url"]),
   });
 }
@@ -335,7 +459,50 @@ async function handleCallback(req: Request, db: ReturnType<typeof createClient>)
   if (error) {
     // Logged loudly, still 200 — see the note at the top of this handler.
     console.error("[sifalo] record_payment_result failed", error);
+    return json({ ok: true });
   }
+
+  // A settled BOOKING is finished — record_payment_result already re-derived
+  // the total and confirmed the room. A settled SUBSCRIPTION still has to be
+  // turned into access, and `settle_subscription_payment` (20260821000001) is
+  // the function that already knows how: it writes the payment row the billing
+  // page reads and extends the period. Reusing it means a Sifalo payment lands
+  // in exactly the same state as one an admin confirmed by hand.
+  if (paid) {
+    const { data: row } = await db
+      .from("payments")
+      .select("purpose, amount, currency, provider_ref, raw")
+      .eq("id", paymentId)
+      .maybeSingle();
+
+    const settled = row as unknown as {
+      purpose: string;
+      amount: number;
+      currency: string;
+      provider_ref: string | null;
+      raw: { subscription_id?: string } | null;
+    } | null;
+
+    if (settled?.purpose === "subscription" && settled.raw?.subscription_id) {
+      const { error: settleError } = await db.rpc("settle_subscription_payment", {
+        p_subscription_id: settled.raw.subscription_id,
+        p_amount: settled.amount,
+        p_currency: settled.currency ?? "USD",
+        p_method: "sifalo",
+        // Required by that function and guaranteed present: a payment cannot
+        // reach 'paid' without the callback that carries the reference.
+        p_external_ref: settled.provider_ref ?? paymentId,
+        p_note: "Paid online via Sifalo Pay.",
+      });
+      if (settleError) {
+        // The money is real and the payment row records it. An admin can still
+        // settle it by hand from the billing panel, which is strictly better
+        // than making the provider retry into a loop.
+        console.error("[sifalo] settle_subscription_payment failed", settleError);
+      }
+    }
+  }
+
   return json({ ok: true });
 }
 

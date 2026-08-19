@@ -7,6 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MOGADISHU_DISTRICTS } from "@/lib/districts";
+import { PAYMENT_OPTIONS, PAYMENT_OPTION_META } from "@/lib/payments";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { SECTION_META, type PageSection } from "@/components/hotel/page-sections";
 import { SectionFields } from "@/components/hotel/SectionFields";
@@ -29,6 +31,10 @@ export type PageSettings = {
   district: string;
   mapsUrl: string;
   socials: { facebook: string; instagram: string; tiktok: string; twitter: string };
+  /** Which ways this hotel lets a guest pay. See src/lib/payments.ts. */
+  paymentOptions: string[];
+  /** Share taken up front when a deposit is offered. */
+  depositPercent: number;
   isPublished: boolean;
 };
 
@@ -334,6 +340,79 @@ function PageTab({
             })}
           </ul>
         )}
+      </Group>
+
+      {/* ── Payment ───────────────────────────────────────────────────────────
+          What a guest is offered on the booking form. A hotel that only takes
+          cash keeps "At the hotel" and turns the other two off; one that wants
+          the money up front does the reverse.
+
+          Turning everything off would leave a booking form with no way to
+          proceed, so the last option cannot be unticked — the handler below
+          refuses rather than the UI hiding the checkbox, because a disabled
+          control with no explanation reads as a bug. */}
+      <Group title="Payment">
+        <div className="space-y-2">
+          {PAYMENT_OPTIONS.map((option) => {
+            const meta = PAYMENT_OPTION_META[option];
+            const checked = settings.paymentOptions.includes(option);
+            const isLast = checked && settings.paymentOptions.length === 1;
+            return (
+              <label
+                key={option}
+                className="flex items-start gap-2.5 cursor-pointer"
+                title={isLast ? "A hotel has to accept at least one way to pay." : undefined}
+              >
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={(next) => {
+                    if (!next && isLast) return;
+                    onChange({
+                      paymentOptions: next
+                        ? [...settings.paymentOptions, option]
+                        : settings.paymentOptions.filter((o) => o !== option),
+                    });
+                  }}
+                  className="mt-0.5"
+                />
+                <span className="min-w-0">
+                  <span className="block text-xs text-foreground">
+                    {option === "deposit"
+                      ? `Deposit (${settings.depositPercent}%)`
+                      : meta.label}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground leading-snug">
+                    {meta.hint}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+
+          {settings.paymentOptions.includes("deposit") && (
+            <div className="pt-1">
+              <Label className="text-[11px] text-muted-foreground">Deposit percentage</Label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={settings.depositPercent}
+                onChange={(e) =>
+                  // Clamped on save as well (and in the database) — this only
+                  // stops the field fighting the person typing "2" on the way
+                  // to "25".
+                  onChange({ depositPercent: Number(e.target.value) || 0 })
+                }
+                className="h-9 text-xs mt-1"
+              />
+            </div>
+          )}
+
+          <p className="text-[11px] text-muted-foreground pt-1">
+            Guests pay with EVC Plus, Zaad, eDahab, Sahal or a card. Money reaches your
+            account through Sifalo Pay.
+          </p>
+        </div>
       </Group>
 
       {/* ── District ──────────────────────────────────────────────────────────

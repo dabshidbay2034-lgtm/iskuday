@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useAppAuth } from "@/hooks/use-auth";
 import { formatDay } from "@/hooks/use-rent";
 import { accountKind } from "@/lib/account-type";
+import { SubscriptionCheckout } from "@/components/SubscriptionCheckout";
 import {
   PLANS, TRIAL_DAYS, formatPlanPrice, planById, planForAccountKind,
   type Plan, type PlanId,
@@ -165,6 +166,14 @@ const Billing = () => {
             </p>
           )}
         </section>
+
+        {/* ── Pay now ────────────────────────────────────────────────────────
+            Renders only for a plan this account actually has a subscription
+            row for; both are null otherwise. HowToPay stays directly beneath,
+            because a merchant account can be down and "call us" must never
+            stop being an answer. */}
+        <SubscriptionCheckout plan="hotel" subscriptionId={hotel.subscription?.id} />
+        <SubscriptionCheckout plan="pms" subscriptionId={pms.subscription?.id} />
 
         <HowToPay />
 
