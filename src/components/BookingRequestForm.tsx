@@ -1,9 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarCheck, Loader2, Send } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { formatMoney } from "@/hooks/use-rent";
 import { addDaysLocal, nightsBetween, todayInput } from "@/hooks/use-bookings";
+import { useRoomPaymentTerms } from "@/hooks/use-payments";
+import {
+  PAYMENT_OPTION_META,
+  amountDueLater,
+  amountDueNow,
+  clampPercent,
+  offeredOptions,
+  type PaymentOption,
+} from "@/lib/payments";
+import { BookingPayment } from "@/components/BookingPayment";
 
 // `create_booking_request` arrives with migration 20260807000001 and isn't in
 // the generated types until `supabase gen types` runs, so it's called through a
@@ -44,7 +54,27 @@ export function BookingRequestForm({
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState<{ total: number; nights: number } | null>(null);
+  const [confirmed, setConfirmed] = useState<{
+    total: number;
+    nights: number;
+    bookingId: string | null;
+  } | null>(null);
+  /** Flips once the money has actually landed, so the copy stops promising a call. */
+  const [paid, setPaid] = useState(false);
+
+  // What this hotel accepts. Defaults to "pay at the hotel" for a room with no
+  // hotel behind it, which is how every nightly listing worked before this.
+  const terms = useRoomPaymentTerms(roomId);
+  const options = offeredOptions(terms.options);
+  const depositPercent = clampPercent(terms.depositPercent);
+  const [payOption, setPayOption] = useState<PaymentOption>("at_hotel");
+
+  // Keep the selection inside what the hotel offers. A hotel that turns off
+  // online payment while somebody has the form open must not leave them on a
+  // choice that the server will refuse.
+  useEffect(() => {
+    if (!options.includes(payOption)) setPayOption(options[0]);
+  }, [options, payOption]);
 
   const nights = nightsBetween(checkIn, checkOut);
   const total = Math.max(0, nights) * nightlyRate;
@@ -56,10 +86,13 @@ export function BookingRequestForm({
           <CalendarCheck className="w-5 h-5 text-success" />
         </div>
         <div>
-          <h3 className="font-heading font-bold text-foreground">Request received</h3>
+          <h3 className="font-heading font-bold text-foreground">
+            {paid ? "Paid — you're booked" : "Request received"}
+          </h3>
           <p className="text-sm text-muted-foreground">
-            We've passed your dates to {roomTitle}. A member of the team will
-            confirm by phone.
+            {paid
+              ? `${roomTitle} has your payment and your dates. Show this at reception.`
+              : `We've passed your dates to ${roomTitle}. A member of the team will confirm by phone.`}
           </p>
         </div>
         <dl className="rounded-xl bg-muted/50 p-3 text-sm space-y-1">
@@ -72,11 +105,29 @@ export function BookingRequestForm({
             <dd className="text-foreground">{confirmed.nights}</dd>
           </div>
         </dl>
+        {/* The room is held either way. Payment is the next step, not a
+            condition of having booked — a guest whose EVC Plus push fails still
+            has their dates, and the desk can take cash on arrival. */}
+        {!paid && confirmed.bookingId && payOption !== "at_hotel" && (
+          <div className="pt-1 border-t border-border/60">
+            <BookingPayment
+              bookingId={confirmed.bookingId}
+              option={payOption}
+              amount={amountDueNow(confirmed.total, payOption, depositPercent)}
+              onPaid={() => setPaid(true)}
+              onSkip={() => setPaid(false)}
+            />
+          </div>
+        )}
+
         <Button
           variant="outline"
           size="sm"
           className="w-full"
-          onClick={() => setConfirmed(null)}
+          onClick={() => {
+            setConfirmed(null);
+            setPaid(false);
+          }}
         >
           Make another request
         </Button>
@@ -124,8 +175,15 @@ export function BookingRequestForm({
         p_notes: notes || null,
       });
       if (rpcError) throw rpcError;
-      const result = data as { total_amount: number; nights: number } | null;
-      setConfirmed({ total: Number(result?.total_amount ?? 0), nights: Number(result?.nights ?? nights) });
+      const result = data as { id?: string; total_amount: number; nights: number } | null;
+      setConfirmed({
+        total: Number(result?.total_amount ?? 0),
+        nights: Number(result?.nights ?? nights),
+        // Needed to attach a payment. Absent only if the RPC predates the `id`
+        // field, in which case the guest still has a booking and simply settles
+        // at the desk — never block a confirmed room on a missing id.
+        bookingId: typeof result?.id === "string" ? result.id : null,
+      });
     } catch {
       setError(
         "Those dates are taken, or something went wrong. Pick different dates and try again.",
@@ -271,6 +329,49 @@ export function BookingRequestForm({
           <p className="text-xs text-destructive" role="alert">
             {error}
           </p>
+        )}
+
+        {/* Only rendered when there is a genuine choice. A hotel that takes
+            cash only offers one route, and a radio group with one option is a
+            control that asks a question with no alternative answer. */}
+        {options.length > 1 && (
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">How would you like to pay?</Label>
+            <div className="space-y-1.5">
+              {options.map((option) => {
+                const meta = PAYMENT_OPTION_META[option];
+                const active = payOption === option;
+                const dueNow = amountDueNow(total, option, depositPercent);
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setPayOption(option)}
+                    aria-pressed={active}
+                    className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                      active ? "border-primary bg-primary/5" : "border-border bg-card hover:border-primary/40"
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {option === "deposit" ? `Pay ${depositPercent}% deposit` : meta.label}
+                      </span>
+                      {nights > 0 && meta.online && (
+                        <span className="text-sm font-semibold text-foreground shrink-0">
+                          {formatMoney(dueNow)}
+                        </span>
+                      )}
+                    </div>
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">
+                      {option === "deposit" && nights > 0
+                        ? `${formatMoney(amountDueLater(total, option, depositPercent))} on arrival.`
+                        : meta.hint}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {nights > 0 && (
