@@ -23,6 +23,7 @@ import { Tables } from "@/integrations/supabase/types";
 import { useAppAuth } from "@/hooks/use-auth";
 import { BillingAdminPanel } from "@/components/admin/BillingAdminPanel";
 import type { UserRole } from "@/lib/types";
+import { roleChangeBlockedReason } from "@/lib/admin-guards";
 
 type PropertyWithDetails = Tables<"properties"> & {
   profiles: Tables<"profiles"> | null;
@@ -44,6 +45,22 @@ type UserWithRole = {
   contact: Tables<"profile_contacts"> | null;
 };
 
+/**
+ * The roles this panel can assign, in the order they are offered.
+ *
+ * A list rather than six hand-written <SelectItem>s so that each one can be
+ * disabled by the same rule — and so adding a role to app_role means adding it
+ * here, not remembering that this dropdown exists.
+ */
+const ASSIGNABLE_ROLES: { value: UserRole; label: string }[] = [
+  { value: "user", label: "Renter" },
+  { value: "owner", label: "Owner" },
+  { value: "hotel_manager", label: "Hotel Manager" },
+  { value: "agent", label: "Agent" },
+  { value: "semi_admin", label: "Semi Admin" },
+  { value: "admin", label: "Admin" },
+];
+
 const Admin = () => {
   const [properties, setProperties] = useState<PropertyWithDetails[]>([]);
   const [users, setUsers] = useState<UserWithRole[]>([]);
@@ -55,7 +72,7 @@ const Admin = () => {
   const [userVerifiedFilter, setUserVerifiedFilter] = useState("all");
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isLoaded, platformRole, isSignedIn } = useAppAuth();
+  const { isLoaded, platformRole, isSignedIn, userId } = useAppAuth();
   const isAdmin = isLoaded && isSignedIn && platformRole === "admin";
 
   // Load properties — single query with a batch profile fetch instead of
@@ -171,31 +188,67 @@ const Admin = () => {
     }
   };
 
+  // How many DIFFERENT people hold admin. Drives the guard below; counted by
+  // user_id rather than by row to match public.guard_last_admin().
+  const adminCount = new Set(
+    users.filter((u) => u.role === "admin").map((u) => u.user_id),
+  ).size;
+
+  // Rules live in src/lib/admin-guards.ts so they can be tested, and so this
+  // screen shares one definition with the org and hotel team panels instead of
+  // becoming a third slightly-different copy.
+  const roleChangeBlocked = (user: UserWithRole, target: UserRole): string | null =>
+    roleChangeBlockedReason(
+      { userId: user.user_id, role: user.role },
+      target,
+      { adminCount, currentUserId: userId },
+    );
+
   // User management actions
   const updateUserRole = async (roleId: string, userId: string, newRole: UserRole) => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("user_roles")
       .update({ role: newRole })
-      .eq("id", roleId);
+      .eq("id", roleId)
+      // `.select()` is load-bearing, not decoration. Without it PostgREST
+      // answers 204 with no body and no error even when RLS or a trigger
+      // matched zero rows — so a refused change reported "Success" and the
+      // optimistic setUsers below made the screen agree with the lie until a
+      // reload. Asking for the row back means "nothing came back" is
+      // distinguishable from "it worked".
+      .select("id, role");
 
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
-    else {
-      toast({ title: "Success", description: `Role updated to ${newRole}` });
-      setUsers(prev => prev.map(u => u.id === roleId ? { ...u, role: newRole } : u));
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (!data || data.length === 0) {
+      toast({
+        title: "Not changed",
+        description: "The database refused that change. Reload and try again.",
+        variant: "destructive",
+      });
+      return;
     }
+    toast({ title: "Success", description: `Role updated to ${newRole}` });
+    setUsers(prev => prev.map(u => u.id === roleId ? { ...u, role: newRole } : u));
   };
 
   const toggleVerification = async (roleId: string, currentVerified: boolean) => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("user_roles")
       .update({ is_verified: !currentVerified })
-      .eq("id", roleId);
+      .eq("id", roleId)
+      .select("id, is_verified"); // see the note in updateUserRole
 
-    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); }
-    else {
-      toast({ title: "Success", description: `User ${!currentVerified ? "verified" : "unverified"}` });
-      setUsers(prev => prev.map(u => u.id === roleId ? { ...u, is_verified: !currentVerified } : u));
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    if (!data || data.length === 0) {
+      toast({
+        title: "Not changed",
+        description: "The database refused that change. Reload and try again.",
+        variant: "destructive",
+      });
+      return;
     }
+    toast({ title: "Success", description: `User ${!currentVerified ? "verified" : "unverified"}` });
+    setUsers(prev => prev.map(u => u.id === roleId ? { ...u, is_verified: !currentVerified } : u));
   };
 
   const filteredProperties = properties.filter(property =>
@@ -565,15 +618,25 @@ const Admin = () => {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="user">Renter</SelectItem>
-                            <SelectItem value="owner">Owner</SelectItem>
-                            <SelectItem value="hotel_manager">Hotel Manager</SelectItem>
-                            <SelectItem value="agent">Agent</SelectItem>
-                            <SelectItem value="semi_admin">Semi Admin</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
+                            {ASSIGNABLE_ROLES.map(({ value, label }) => {
+                              const blocked = roleChangeBlocked(user, value);
+                              return (
+                                <SelectItem key={value} value={value} disabled={blocked !== null}>
+                                  {label}
+                                </SelectItem>
+                              );
+                            })}
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {/* Say WHY an option is greyed out. A disabled control with
+                          no reason reads as a broken screen. */}
+                      {roleChangeBlocked(user, "user") && (
+                        <p className="text-[10px] text-muted-foreground mt-1.5">
+                          {roleChangeBlocked(user, "user")}
+                        </p>
+                      )}
 
                       {/* User ID */}
                       <p className="text-[10px] text-muted-foreground font-mono mt-2 truncate">

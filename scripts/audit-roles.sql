@@ -17,8 +17,12 @@
 
 
 -- ── 1. Everyone with platform-wide power ─────────────────────────────────────
--- The important one. An admin reads every booking's guest name and phone
--- number, writes subscriptions, and records payments as settled.
+-- The important one. An admin reads profile_contacts (every registered user's
+-- phone number) and property_private, writes subscriptions, and records
+-- payments as settled — thirteen tables in all.
+--
+-- Not bookings: guest contact details there are scoped to the org, the property
+-- owner and assigned staff, with no platform-admin override.
 --
 -- Expect to recognise EVERY row. One you do not is the whole reason this file
 -- exists — revoke it in Admin → Users, or by hand:
@@ -31,13 +35,16 @@ SELECT
   ur.role::TEXT              AS role,
   ur.is_verified,
   p.full_name,
-  -- No email column: this platform authenticates through Clerk and never
-  -- copied the address into Postgres. Phone is how you recognise somebody
-  -- here, and the Clerk user id above is what you search Clerk's dashboard for
-  -- if the name is not enough.
-  p.phone
+  -- Contact details come from profile_contacts, NOT profiles: 20260805000001
+  -- dropped profiles.phone/phone2/phone3 because that table is world-readable
+  -- and RLS is row-level, so a public table cannot hide one column. There is no
+  -- email column anywhere — this platform authenticates through Clerk and never
+  -- copied the address into Postgres. If the name and number are not enough,
+  -- search the Clerk dashboard for the user id.
+  c.phone
 FROM public.user_roles ur
-LEFT JOIN public.profiles p ON p.user_id = ur.user_id
+LEFT JOIN public.profiles         p ON p.user_id = ur.user_id
+LEFT JOIN public.profile_contacts c ON c.user_id = ur.user_id
 WHERE ur.role::TEXT IN ('admin', 'semi_admin')
 ORDER BY ur.role, p.full_name NULLS LAST;
 
@@ -67,9 +74,10 @@ SELECT
   ur.user_id,
   ur.role::TEXT AS role,
   p.full_name,
-  p.phone
+  c.phone
 FROM public.user_roles ur
-LEFT JOIN public.profiles p ON p.user_id = ur.user_id
+LEFT JOIN public.profiles         p ON p.user_id = ur.user_id
+LEFT JOIN public.profile_contacts c ON c.user_id = ur.user_id
 WHERE ur.is_verified
   AND ur.role::TEXT NOT IN ('admin', 'semi_admin')
 ORDER BY ur.role, p.full_name NULLS LAST;
@@ -87,9 +95,10 @@ SELECT
   ur.user_id,
   ur.role::TEXT AS role,
   p.full_name,
-  p.phone
+  c.phone
 FROM public.user_roles ur
-LEFT JOIN public.profiles p ON p.user_id = ur.user_id
+LEFT JOIN public.profiles         p ON p.user_id = ur.user_id
+LEFT JOIN public.profile_contacts c ON c.user_id = ur.user_id
 WHERE ur.role::TEXT IN ('owner', 'hotel_manager', 'agent')
   AND NOT EXISTS (
     SELECT 1 FROM public.subscriptions s

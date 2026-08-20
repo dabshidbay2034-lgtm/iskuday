@@ -19,8 +19,21 @@
 --
 -- against the anon client that already ships in the browser bundle, and become
 -- a platform administrator. Everything gated on `has_role(..., 'admin')` fell
--- with it: reading every booking's guest name and phone number, inserting
--- subscriptions, recording subscription payments, the admin panels.
+-- with it, across thirteen tables. The ones that matter most:
+--
+--   profile_contacts     every registered user's phone, whatsapp and alt phone.
+--                        20260805000001 moved these OFF the world-readable
+--                        profiles table precisely so only admins could see
+--                        them; self-promotion handed that back.
+--   property_private     private notes and figures on other people's property.
+--   subscriptions        insert a paid plan for yourself.
+--   subscription_payments  mark it settled.
+--   user_roles           grant admin to anyone else, including after this.
+--
+-- NOT bookings: public.bookings has no platform-admin policy at all — guest
+-- names and phone numbers there are scoped to the org, the property owner and
+-- assigned staff. The `org:admin` in those policies is a Clerk ORG role, which
+-- is a different thing from the platform role this migration is about.
 --
 -- Note what that means for the paid product: the subscription and payment
 -- policies are all admin-gated and were written correctly, but correct locks
