@@ -243,3 +243,57 @@ $$;
 
 COMMENT ON FUNCTION public.start_trial(TEXT, TEXT, TEXT) IS
   'Starts the one free trial a subject ever gets. Plan must match the account type. See 20260908000001.';
+
+-- ── STEP 4: report what the open door may have let through ───────────────────
+--
+-- Closing a privilege-escalation hole does not undo anything done through it
+-- while it was open, and it was open to every registered user from
+-- 20260306213635 until this migration. So the moment the door shuts, say who is
+-- standing inside.
+--
+-- This is a REPORT, not a repair. It deliberately revokes nothing:
+--   • The legitimate admins are in here too, and this migration cannot tell
+--     them apart from a self-appointed one — nothing recorded WHO granted a
+--     role or when, which is itself worth fixing.
+--   • Demoting the wrong row would lock the operator out of their own admin
+--     panel, and the recovery path (BOOTSTRAP_ADMIN_IDS in clerk-webhook) runs
+--     only on a Clerk user.created event — i.e. not for an existing account.
+-- A human reads this and decides. Re-runnable any time: scripts/audit-roles.sql.
+DO $$
+DECLARE
+  r             RECORD;
+  v_privileged  INT;
+  v_verified    INT;
+BEGIN
+  SELECT count(*) INTO v_privileged
+    FROM public.user_roles WHERE role::TEXT IN ('admin', 'semi_admin');
+
+  RAISE NOTICE '--- ROLE AUDIT -------------------------------------------------';
+  RAISE NOTICE 'Accounts holding admin or semi_admin: %', v_privileged;
+
+  FOR r IN
+    SELECT user_id, role::TEXT AS role, is_verified
+      FROM public.user_roles
+     WHERE role::TEXT IN ('admin', 'semi_admin')
+     ORDER BY role, user_id
+  LOOP
+    RAISE NOTICE '  % — % (verified: %)', r.role, r.user_id, r.is_verified;
+  END LOOP;
+
+  IF v_privileged > 0 THEN
+    RAISE NOTICE 'Check every id above against the people you MEANT to give this to.';
+    RAISE NOTICE 'Any you do not recognise had full read of guest names and phone numbers.';
+  END IF;
+
+  -- Separate problem, same shape: ProfileSettings passed is_verified = true
+  -- when a user picked their account type, so the "Verified" badge the Admin
+  -- panel presents as a platform check was partly self-awarded. set_my_role()
+  -- no longer touches the column, but rows written before this migration keep
+  -- whatever they were given.
+  SELECT count(*) INTO v_verified
+    FROM public.user_roles
+   WHERE is_verified AND role::TEXT NOT IN ('admin', 'semi_admin');
+
+  RAISE NOTICE 'Non-admin accounts marked verified: % (some self-granted; review in Admin → Users)', v_verified;
+  RAISE NOTICE '----------------------------------------------------------------';
+END $$;
