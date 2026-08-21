@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import InstallPWAButton from "@/components/InstallPWAButton";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -8,11 +8,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Menu, X, User, LogIn, Plus, LayoutDashboard, Settings, LogOut, Heart,
-  ChevronDown, Shield, Eye, Home, Building2, Hotel, BedDouble, Store,
+  ChevronDown, Shield, Eye, Home, Building2, Hotel, BedDouble, Store, LayoutGrid,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppAuth } from "@/hooks/use-auth";
 import { accountKind } from "@/lib/account-type";
+import { isNavItemActive, visibleNavItems } from "@/lib/nav";
 import { useClerk } from "@clerk/clerk-react";
 
 /**
@@ -31,9 +32,22 @@ const PROPERTY_CATEGORIES = [
   { type: "commercial", label: "Commercial", Icon: Store },
 ] as const;
 
+/**
+ * One definition of what a top-level nav link looks like.
+ *
+ * There were eight copies of this string inline. Eight copies is how a bar ends
+ * up with one link a shade off the others — and it is why the active state was
+ * previously faked by hard-coding "Home" to the lit colour.
+ */
+const navLinkClass = (active: boolean) =>
+  `px-4 py-2 text-sm font-semibold rounded-full transition-colors ${
+    active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+  }`;
+
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { isSignedIn, user, orgId, platformRole } = useAppAuth();
   // A hotel account adds rooms to its building, not properties to a portfolio.
   const isHotelAccount = accountKind(platformRole) === "hotel";
@@ -46,6 +60,11 @@ const Header = () => {
     isSignedIn &&
     (Boolean(orgId) ||
       ['owner', 'agent', 'hotel_manager', 'admin'].includes(platformRole ?? ''));
+  const navItems = visibleNavItems({
+    canManageProperties: Boolean(canManageProperties),
+    hasOrg: Boolean(orgId),
+  });
+
   const { signOut } = useClerk();
 
   const handleSignOut = async () => {
@@ -72,40 +91,61 @@ const Header = () => {
           />
         </Link>
 
-        {/* Desktop nav */}
+        {/* Desktop nav — rendered from NAV_ITEMS so it cannot drift from the
+            mobile sheet below. See src/lib/nav.ts for why there is a list. */}
         <nav className="hidden lg:flex items-center gap-1 p-1 rounded-full border border-border/70 bg-card/60">
-          <Link to="/" className="px-4 py-2 text-sm font-semibold text-foreground rounded-full hover:bg-muted transition-colors">Home</Link>
-          <Link to="/showcase" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Overview</Link>
-          <Link to="/properties" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Explore</Link>
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-1 px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors outline-none">
-              Categories <ChevronDown className="w-3.5 h-3.5" />
-            </DropdownMenuTrigger>
-            {/* Icons, not emoji.
-                Emoji render in each platform's own house style — Apple's 🏠 and
-                Google's are different drawings in different palettes — so a nav
-                built from them looks like three different design languages
-                depending on the visitor's phone. The lucide set is already the
-                app's icon language; using it here means the menu inherits the
-                brand colour and stays consistent everywhere. */}
-            <DropdownMenuContent align="start" className="w-48 rounded-2xl">
-              {PROPERTY_CATEGORIES.map(({ type, label, Icon }) => (
-                <DropdownMenuItem key={type} asChild>
-                  <Link to={`/properties?type=${type}`} className="w-full rounded-lg gap-2">
-                    <Icon className="w-4 h-4 text-muted-foreground" />
-                    {label}
-                  </Link>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Link to="/services" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Services</Link>
-          <Link to="/about" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">About</Link>
-          {canManageProperties && (
-            <Link to="/manage" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Manage</Link>
-          )}
-          {Boolean(orgId) && (
-            <Link to="/team" className="px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground rounded-full hover:bg-muted transition-colors">Team</Link>
+          {navItems.map((item) =>
+            item.id === "explore" ? (
+              // The one entry with a menu. The category links used to be a
+              // sibling called "Categories" pointing at the same route with a
+              // filter — folding them in means Explore is one idea with five
+              // shortcuts rather than two nav entries competing for it.
+              <DropdownMenu key={item.id}>
+                <DropdownMenuTrigger
+                  // aria-current belongs here too, not only on the plain links.
+                  // Explore is the entry a visitor is most often standing on,
+                  // and rendering it as a menu button is a layout decision that
+                  // must not cost a screen-reader user the "you are here".
+                  aria-current={isNavItemActive(pathname, item.to) ? "page" : undefined}
+                  className={`flex items-center gap-1 ${navLinkClass(isNavItemActive(pathname, item.to))} outline-none`}
+                >
+                  {item.label} <ChevronDown className="w-3.5 h-3.5" />
+                </DropdownMenuTrigger>
+                {/* Icons, not emoji.
+                    Emoji render in each platform's own house style — Apple's 🏠
+                    and Google's are different drawings in different palettes —
+                    so a nav built from them looks like three different design
+                    languages depending on the visitor's phone. The lucide set is
+                    already the app's icon language; using it here means the menu
+                    inherits the brand colour and stays consistent everywhere. */}
+                <DropdownMenuContent align="start" className="w-52 rounded-2xl">
+                  <DropdownMenuItem asChild>
+                    <Link to="/properties" className="w-full rounded-lg gap-2 font-semibold">
+                      <LayoutGrid className="w-4 h-4 text-muted-foreground" />
+                      All properties
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {PROPERTY_CATEGORIES.map(({ type, label, Icon }) => (
+                    <DropdownMenuItem key={type} asChild>
+                      <Link to={`/properties?type=${type}`} className="w-full rounded-lg gap-2">
+                        <Icon className="w-4 h-4 text-muted-foreground" />
+                        {label}
+                      </Link>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Link
+                key={item.id}
+                to={item.to}
+                aria-current={isNavItemActive(pathname, item.to) ? "page" : undefined}
+                className={navLinkClass(isNavItemActive(pathname, item.to))}
+              >
+                {item.label}
+              </Link>
+            ),
           )}
         </nav>
 
@@ -205,21 +245,28 @@ const Header = () => {
             className="lg:hidden border-t border-border/70 bg-background overflow-hidden"
           >
             <div className="container py-4 flex flex-col gap-1">
-              <Link to="/" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Home</Link>
-              <Link to="/showcase" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Overview</Link>
-              <Link to="/about" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>About</Link>
-              <Link to="/properties" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>All Properties</Link>
-              <Link to="/services" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Services</Link>
-              {canManageProperties && (
-                <Link to="/manage" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Manage Properties</Link>
-              )}
-              {Boolean(orgId) && (
-                <Link to="/team" className="py-2.5 px-3 rounded-xl text-sm font-semibold hover:bg-muted transition-colors" onClick={() => setIsOpen(false)}>Team</Link>
-              )}
+              {/* Same list, same order, same words as the desktop bar. */}
+              {navItems.map((item) => {
+                const active = isNavItemActive(pathname, item.to);
+                return (
+                  <Link
+                    key={item.id}
+                    to={item.to}
+                    aria-current={active ? "page" : undefined}
+                    className={`py-2.5 px-3 rounded-xl text-sm font-semibold transition-colors ${
+                      active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                    onClick={() => setIsOpen(false)}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
 
-              {/* Property Categories */}
+              {/* The category shortcuts sit directly under Explore, mirroring
+                  the desktop dropdown rather than being a separate section with
+                  its own heading further down the sheet. */}
               <div className="py-2 px-3">
-                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Categories</div>
                 <div className="flex flex-wrap gap-2">
                   {PROPERTY_CATEGORIES.map(({ type, label, Icon }) => (
                     <Link
