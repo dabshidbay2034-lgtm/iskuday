@@ -26,6 +26,7 @@ import {
 import {
   useHotelInvites,
   useInviteToHotel,
+  useJwtEmail,
   useRevokeHotelInvite,
   inviteJoinUrl,
 } from "@/hooks/use-hotel-invites";
@@ -83,6 +84,8 @@ export function HotelTeamCard({
   const updateRole = useUpdateHotelMemberRole(hotelId);
   const removeMember = useRemoveHotelMember(hotelId);
   const invite = useInviteToHotel(hotelId);
+  // Whether invitations can be matched to a person at all — see useJwtEmail.
+  const jwtEmail = useJwtEmail();
   const revokeInvite = useRevokeHotelInvite(hotelId);
 
   const isOwner = Boolean(ownerId && userId && ownerId === userId);
@@ -255,6 +258,33 @@ export function HotelTeamCard({
           </p>
         )}
       </div>
+
+      {/* ── The invite system cannot work at all ───────────────────────────── */}
+      {/* Shown only once we KNOW the claim is absent, and only to someone on a
+          team screen — the claim is template-wide, so if it is missing here it
+          is missing for every invitee, and this is the person who can fix it.
+          Without this the failure is completely silent: invites send, land, and
+          can never be accepted, and the admin blames the invitee. */}
+      {canManage && jwtEmail.isMissingEmailClaim && (
+        <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+          <ShieldAlert className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-medium text-foreground">
+              Invitations can't be accepted yet
+            </p>
+            <p className="text-muted-foreground mt-0.5">
+              Your sign-in token isn't carrying an email address, so there is nothing to
+              match an invitation against. Anyone you invite will get the email and then
+              be told there is nothing waiting for them.
+            </p>
+            <p className="text-muted-foreground mt-1">
+              Fix once in the Clerk dashboard: add{" "}
+              <code className="font-mono text-[11px]">"email": "{"{{user.primary_email_address}}"}"</code>{" "}
+              to the JWT template, then sign out and back in. See docs/CLERK_SETUP.md.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Pending invitations ────────────────────────────────────────────── */}
       {pending.length > 0 && (

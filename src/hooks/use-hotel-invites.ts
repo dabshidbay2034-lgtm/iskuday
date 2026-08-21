@@ -116,6 +116,63 @@ export const hotelInvitesKey = (hotelId?: string) =>
 export const myHotelIdsKey = (userId?: string | null) =>
   userId ? (["hotel-ids", "mine", userId] as const) : (["hotel-ids", "mine"] as const);
 
+export const jwtEmailKey = (userId?: string | null) =>
+  userId ? (["jwt-email", userId] as const) : (["jwt-email"] as const);
+
+/**
+ * Can this deployment match invitations to people at all?
+ *
+ * ── THE SILENT FAILURE THIS EXPOSES ─────────────────────────────────────────
+ * The whole invite system matches `hotel_invites.email` against the `email`
+ * claim on the caller's Clerk JWT. That claim is documented for Clerk's
+ * JWT-template Option A and is NOT confirmed for Option B, and it is absent
+ * from the pre-deploy checklist in docs/CLERK_SETUP.md. If the template does
+ * not emit it, `public.jwt_email()` returns NULL and:
+ *
+ *   • `accept_hotel_invites()` returns 0 for everyone, forever;
+ *   • the invitee is told nothing, because 0 is also the normal case;
+ *   • the admin watches the invite sit at "Pending" and concludes the invitee
+ *     never bothered.
+ *
+ * Nothing anywhere reports it. 20260813000001's own header says the UI should
+ * "render an honest 'your session token has no email claim — invites cannot be
+ * accepted'" and grants jwt_email() to `authenticated` precisely so it can —
+ * but that message was never built. This hook is it.
+ *
+ * Read on the TEAM screen rather than at sign-in on purpose. The claim is
+ * template-wide, not per-user, so if it is missing for the admin looking at
+ * this card it is missing for every invitee too — and the admin is the only
+ * person who can act on it. Warning renters about a JWT claim would be noise.
+ */
+export function useJwtEmail() {
+  const { isSignedIn, userId } = useAppAuth();
+
+  const query = useQuery({
+    queryKey: jwtEmailKey(userId),
+    enabled: Boolean(isSignedIn && userId),
+    // The claim cannot change without a new token, which means a new session.
+    staleTime: Infinity,
+    retry: false,
+    queryFn: async (): Promise<string | null> => {
+      const { data, error } = await looseRpc("jwt_email");
+      if (error) throw error;
+      return typeof data === "string" && data ? data : null;
+    },
+  });
+
+  return {
+    email: query.data ?? null,
+    isLoading: query.isLoading,
+    /**
+     * True only when we KNOW the claim is missing. An error or a still-loading
+     * query must not light the warning: telling an operator their Clerk
+     * template is broken when the request merely failed would send them to
+     * change a working configuration.
+     */
+    isMissingEmailClaim: query.isSuccess && query.data === null,
+  };
+}
+
 // ── Queries ──────────────────────────────────────────────────────────────────
 
 /**

@@ -5,11 +5,17 @@
 -- SELECT. Nothing here changes a role, a badge or a subscription.
 --
 -- ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
--- Until 20260908000001, `user_roles` let any signed-in user write their own row
--- with no restriction on the `role` column, and `app_role` contains 'admin'.
--- The hole is closed, but closing it does not undo anything done through it,
--- and nothing in this schema records who granted a role or when. So the only
--- available check is: look at the list, and recognise the people on it.
+-- Nothing in this schema records who granted a role, or when. There is no audit
+-- trail on user_roles at all. So the only available check on who holds power is
+-- to look at the list and recognise the people on it.
+--
+-- A CORRECTION, because an earlier version of this file said otherwise: it
+-- claimed that until 20260908000001 any signed-in user could write 'admin' into
+-- their own row. That was true of the ORIGINAL policies (20260804000001) but
+-- had already been fixed on 12 August by 20260812000001, which constrains the
+-- role column to ('user','owner','agent','hotel_manager') in both USING and
+-- WITH CHECK. Self-promotion to admin was not reachable. Run these queries as
+-- routine hygiene, not as incident response.
 --
 -- Migration 20260908000001 prints query 1 automatically when it applies. This
 -- file is for looking again later, and for the queries too long to be NOTICEs.

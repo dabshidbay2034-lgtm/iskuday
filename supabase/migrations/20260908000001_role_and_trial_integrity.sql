@@ -1,44 +1,52 @@
 -- =============================================================================
 -- Migration: 20260908000001_role_and_trial_integrity.sql
 --
--- Closes a privilege-escalation hole, and makes a chosen account type and a
--- consumed trial both permanent.
+-- Makes a chosen account type and a consumed trial both permanent, and takes
+-- role writes away from the client entirely.
 --
--- ── THE HOLE ────────────────────────────────────────────────────────────────
--- `public.user_roles` carried these policies:
+-- ── WHAT WAS AND WAS NOT ALREADY FIXED ──────────────────────────────────────
+-- CORRECTION TO AN EARLIER VERSION OF THIS HEADER. It claimed that any signed-in
+-- user could set themselves to 'admin'. That was TRUE of 20260804000001, whose
+-- policies constrained which ROW you may write and nothing about the `role`
+-- column. It was NOT true when this migration was written:
+-- 20260812000001_security_hardening.sql (STEP 1) had already replaced both
+-- policies with
 --
---   CREATE POLICY "Users can insert own roles" ... WITH CHECK (auth.jwt()->>'sub' = user_id);
---   CREATE POLICY "Users can update own role"  ... USING  (auth.jwt()->>'sub' = user_id)
---                                                  WITH CHECK (auth.jwt()->>'sub' = user_id);
+--     role IN ('user', 'owner', 'agent', 'hotel_manager')
 --
--- They constrain WHICH ROW you may write. They constrain NOTHING about the
--- `role` column, and `public.app_role` contains 'admin' and 'semi_admin'. So
--- any signed-in user — a renter who registered a minute ago — could run
+-- in BOTH `USING` and `WITH CHECK`, which is exactly the self-service ceiling
+-- that stops 'admin' and 'semi_admin' being claimed. The escalation was closed
+-- on 12 August. The earlier header here read the superseded 20260804000001 and
+-- reported it as the live state. Anyone auditing this file should trust
+-- 20260812000001 over the first draft of this one.
 --
---   update user_roles set role = 'admin' where user_id = <their own id>
+-- ── WHAT WAS STILL OPEN, AND IS WHAT THIS MIGRATION IS FOR ──────────────────
+-- Three things survived that ceiling:
 --
--- against the anon client that already ships in the browser bundle, and become
--- a platform administrator. Everything gated on `has_role(..., 'admin')` fell
--- with it, across thirteen tables. The ones that matter most:
+--   1. is_verified was self-settable. 20260812000001 says so in as many words:
+--      "NOTE ON is_verified: deliberately NOT constrained here ... Tightening
+--      it is a product change, not a security fix." ProfileSettings duly passed
+--      `true`, so the "Verified" badge the Admin panel presents as a platform
+--      check was partly self-awarded. It matters most for `agent`, where the
+--      badge is a trust signal a renter acts on when handing over a deposit.
 --
---   profile_contacts     every registered user's phone, whatsapp and alt phone.
---                        20260805000001 moved these OFF the world-readable
---                        profiles table precisely so only admins could see
---                        them; self-promotion handed that back.
---   property_private     private notes and figures on other people's property.
---   subscriptions        insert a paid plan for yourself.
---   subscription_payments  mark it settled.
---   user_roles           grant admin to anyone else, including after this.
+--   2. A user could move freely among the four business roles. That is the
+--      trial-farming loop: take the 14-day `pms` trial as an owner, let it
+--      lapse, switch to hotel_manager, take the `hotel` trial. Repeatable
+--      indefinitely, one account, no admin involved.
 --
--- NOT bookings: public.bookings has no platform-admin policy at all — guest
--- names and phone numbers there are scoped to the org, the property owner and
--- assigned staff. The `org:admin` in those policies is a Clerk ORG role, which
--- is a different thing from the platform role this migration is about.
+--   3. Nothing froze the account type once a plan had started, so the role a
+--      subscription was sold against could change underneath it.
 --
--- Note what that means for the paid product: the subscription and payment
--- policies are all admin-gated and were written correctly, but correct locks
--- do not help when the key is on the wall. This one hole was also the way to a
--- free subscription. Fixing it is what makes the billing rules real.
+-- ── WHY REMOVE THE POLICIES RATHER THAN ADD TO THEM ─────────────────────────
+-- The ceiling in 20260812000001 works, but it is a list of allowed values
+-- spread across two policies and two clauses, and every new rule above would
+-- add another condition to all four places. Routing the whole operation through
+-- one SECURITY DEFINER function instead means the rules are written once, in
+-- procedural code, where the reason for each can be stated — and the client
+-- keeps no direct write path to a privilege table at all. Nothing here is
+-- weaker than what it replaces: set_my_role() accepts only the same four
+-- business values, and still never 'admin' or 'semi_admin'.
 --
 -- ── THE RULES THIS INSTALLS ─────────────────────────────────────────────────
 --   • No client may write `user_roles` directly. Not INSERT, not UPDATE.

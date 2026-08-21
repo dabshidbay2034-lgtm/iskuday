@@ -8,15 +8,18 @@ import type { PostgrestError } from '@supabase/supabase-js';
  * ── WHY THIS IS AN RPC AND NOT A WRITE ──────────────────────────────────────
  * It used to read `user_roles` and then INSERT or UPDATE the row from the
  * browser, which worked because the table's RLS let a signed-in user write
- * their own row. Those policies checked WHICH ROW you could write and nothing
- * about the `role` column — and `app_role` contains 'admin'. Any registered
- * user could set themselves to platform administrator from the console, using
- * the anon client that ships in this bundle. Everything gated on
- * `has_role(..., 'admin')` went with it: every guest's phone number, every
- * subscription, every payment record.
+ * their own row.
  *
- * 20260908000001 removed those policies, so this path no longer exists. The
- * rules now live in `set_my_role()` where a client cannot reach them:
+ * To be accurate about the severity — an earlier version of this comment was
+ * not: that write was NOT an escalation path to 'admin'. 20260812000001 already
+ * pinned the role column to the four business values in both USING and WITH
+ * CHECK. What it did leave open was `is_verified`, which that migration
+ * deliberately did not constrain and which this module used to pass as `true`,
+ * and free movement between business roles, which is how one account could farm
+ * a second free trial.
+ *
+ * 20260908000001 removed the policies entirely, so no client write path to a
+ * privilege table remains. The rules now live in `set_my_role()`:
  *
  *   - only the three business roles, never 'admin' or 'semi_admin'
  *   - only from renter, or from having no role yet
