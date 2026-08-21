@@ -410,9 +410,12 @@ function PlanCard({
             Start {TRIAL_DAYS} free days
           </Button>
         ) : state === "none" ? (
-          // The plan doesn't match this account's type
+          // The plan doesn't match this account's type. It no longer says
+          // "switch your account type in Settings": 20260908000001 freezes the
+          // type once chosen, so that sent a paying customer looking for a
+          // control that is deliberately not there.
           <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground text-center">
-            <span>Switch your account type in Settings to access this plan</span>
+            <span>This plan is for a different account type. Contact support if your account is set up wrongly.</span>
           </div>
         ) : (
           // Trial already used. No checkout to send them to, so the honest CTA

@@ -9,7 +9,9 @@ import type { UserRole } from "@/lib/types";
  * now mean something:
  *
  *   agent          → a letting AGENCY. Rentals only, never hotels.
- *   hotel_manager  → a HOTEL. Rooms, bookings, housekeeping, hotel pages.
+ *   hotel_manager  → a HOTEL, and a landlord too: rooms, bookings,
+ *                    housekeeping and hotel pages, PLUS everything an owner
+ *                    gets, because the hotel plan bundles the PMS.
  *   owner          → a solo landlord. Rentals, same as an agency.
  *   admin          → unrestricted.
  *
@@ -18,9 +20,14 @@ import type { UserRole } from "@/lib/types";
  * a mix, and stranding a hotelier from the rooms they are actively letting
  * would be a far worse bug than the one being fixed. So nothing here is used
  * to hide, filter or lock EXISTING records — `/manage` still lists whatever
- * the database returns. An account on the wrong side of the line changes its
- * own role in Settings (ProfileSettings self-upgrade), and its existing data
- * keeps working the whole time.
+ * the database returns.
+ *
+ * ── THE ESCAPE HATCH IS GONE — DO NOT WRITE MESSAGES THAT ASSUME IT ────────
+ * This header used to end "an account on the wrong side of the line changes
+ * its own role in Settings". That is no longer true: 20260908000001 freezes
+ * the account type once it is chosen, and again once a plan starts. Anything
+ * telling a user to switch their account type is now telling them to look for
+ * a control that is deliberately absent — say "contact support" instead.
  *
  * `properties.type` and `PropertyType` in src/lib/types.ts now agree on
  * `villa`. `house` is accepted on the way in only — see property-display.ts.
@@ -66,10 +73,26 @@ export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = {
   none: "Renter",
 };
 
-/** Which `properties.type` values this account may CREATE. */
+/**
+ * Which `properties.type` values this account may CREATE.
+ *
+ * ── WHY A HOTEL ACCOUNT GETS EVERYTHING ─────────────────────────────────────
+ * It used to get HOTEL_TYPES only, matching the trigger in 20260812000002. The
+ * pricing has since reversed that: the `hotel` plan is sold as "Hotel
+ * Management + PMS" for one price, and PLAN_COVERAGE lets it satisfy every PMS
+ * gate. A hotelier who also owns apartments was reaching the rent ledger and
+ * the tenant records they had paid for, with no way to put a building behind
+ * them. 20260910000002 removes the matching database rule; this is the half
+ * the user can see.
+ *
+ * The other direction is unchanged and deliberate — an agency or landlord
+ * still cannot create `hotel`. That rule is "hotel rooms require a hotel
+ * account", which is about bookings, housekeeping and a front desk, and it was
+ * never meant to be symmetric.
+ */
 export function allowedPropertyTypes(role: UserRole | null | undefined): DbPropertyType[] {
   switch (accountKind(role)) {
-    case "hotel": return HOTEL_TYPES;
+    case "hotel": return ALL_TYPES;
     case "agency":
     case "landlord": return RENTAL_TYPES;
     case "platform": return ALL_TYPES;
@@ -103,15 +126,25 @@ export function canListRentals(role: UserRole | null | undefined): boolean {
   return allowedPropertyTypes(role).some((t) => t !== "hotel");
 }
 
-/** One line explaining a refusal, for the UI to show instead of a dead end. */
+/**
+ * One line explaining a refusal, for the UI to show instead of a dead end.
+ *
+ * None of these may say "switch your account type" any more — see the note in
+ * this file's header. A renter has genuinely not chosen yet, so Settings is
+ * the right destination for them and only them; everyone else is frozen and
+ * has to be sent to a human.
+ */
 export function wrongAccountTypeMessage(role: UserRole | null | undefined): string {
   switch (accountKind(role)) {
     case "hotel":
-      return "Hotel accounts list hotel rooms. To rent out villas or apartments, switch your account type in Settings.";
+      // Reachable only for a type a hotel account genuinely cannot create,
+      // which after 20260910000002 is none of them. Kept honest rather than
+      // deleted, in case a future type is added with narrower rules.
+      return "Your hotel account can't list this kind of property. Contact support if you think it should.";
     case "agency":
     case "landlord":
-      return "Rental accounts list villas, apartments, BnB and commercial space. To list hotel rooms, switch to a Hotel account in Settings.";
+      return "Hotel rooms need a Hotel account — they come with bookings, housekeeping and a front desk. Contact support to change your account type.";
     default:
-      return "Your account can't list properties yet. Choose an account type in Settings.";
+      return "Choose an account type in Settings before listing a property.";
   }
 }

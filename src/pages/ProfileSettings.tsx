@@ -252,12 +252,15 @@ const ProfileSettings = () => {
                 <Card className="border-accent/20 bg-accent/5">
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <ArrowUpCircle className="w-5 h-5 text-accent" /> {currentRole === "user" ? "Upgrade Your Role" : "Switch Account Type"}
+                      <ArrowUpCircle className="w-5 h-5 text-accent" /> Upgrade Your Role
                     </CardTitle>
                     <CardDescription>
-                      {currentRole === "user"
-                        ? "Want to list properties? Upgrade from Renter to start earning."
-                        : "Switch account type — your existing listings stay exactly as they are."}
+                      {/* No "switch account type" branch: canUpgrade is now
+                          `currentRole === "user"`, so only a renter ever sees
+                          this card. The old ternary was unreachable and
+                          promised something set_my_role() refuses. */}
+                      Want to list properties? Upgrade from Renter to start earning.
+                      This is a one-time choice — contact support if you need it changed later.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
