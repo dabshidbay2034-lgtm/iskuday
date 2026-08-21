@@ -94,7 +94,15 @@ BEGIN
             HINT = 'Admin panel -> Users -> set someone to Admin, then retry.';
   END IF;
 
-  RETURN CASE TG_OP WHEN 'DELETE' THEN OLD ELSE NEW END;
+  -- Explicit IF rather than `RETURN CASE TG_OP WHEN 'DELETE' THEN OLD ELSE NEW
+  -- END`. In a DELETE trigger NEW is unassigned, and putting it in a CASE arm
+  -- makes the safety of this line depend on plpgsql evaluating the branch it
+  -- did not pick. A trigger whose whole job is to refuse a dangerous delete
+  -- must not have a way to raise on the ordinary path.
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
